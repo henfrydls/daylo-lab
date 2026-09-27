@@ -159,6 +159,13 @@ jobs:
   # notification that arrives after a reboot can only be proven on a real device.
   build-check-android:
     needs: test
+    # Off in the lab, as a whole job so no runner spends two minutes installing an NDK for
+    # a build that cannot happen. src-tauri/gen/android was generated for com.daylo.app and
+    # its package directories carry that name, so with com.daylo.lab the build stops at
+    # "Project directory ... com/daylo/lab does not exist". Regenerating it would be work
+    # for the one platform with no updater at all. In henfrydls/daylo this job runs, and
+    # must keep running.
+    if: false
     runs-on: ubuntu-latest
     name: Build Check (Android)
     timeout-minutes: 45
@@ -578,7 +585,7 @@ jobs:
           #
           # The margin is generous on purpose: at 20s the run passed by two seconds, and a
           # more loaded runner would have gone red again with a healthy application.
-          STORE="$HOME/.local/share/com.daylo.app/localstorage"
+          STORE="$HOME/.local/share/com.daylo.lab/localstorage"
           if [ "$RUNNER_OS" = "Linux" ]; then
             for s in $(seq 1 45); do
               # With 'nullglob', a glob with no matches DISAPPEARS, so an
@@ -622,7 +629,7 @@ jobs:
           if [ "$RUNNER_OS" != "Linux" ]; then
             exit 0
           fi
-          STORE="$HOME/.local/share/com.daylo.app/localstorage"
+          STORE="$HOME/.local/share/com.daylo.lab/localstorage"
           # The glob includes -wal and -shm on purpose: even though the shutdown is clean
           # now, reading only the base file would depend on the checkpoint having happened.
           files=( "$STORE"/*localstorage* )
@@ -631,7 +638,7 @@ jobs:
             echo "::error::  $STORE"
             echo "::error::The webview never loaded the application."
             echo "--- what is under the data directory ---"
-            find "$HOME/.local/share/com.daylo.app" 2>/dev/null | head -20 || true
+            find "$HOME/.local/share/com.daylo.lab" 2>/dev/null | head -20 || true
             echo "--- full application output ---"
             cat smoke.log 2>/dev/null || true
             echo "--- WebKitGTK sandbox ---"
