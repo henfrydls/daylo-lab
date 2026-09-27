@@ -1,0 +1,614 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  # A manual re-run ONLY rebuilds the demo. Actions artifacts expire after 90 days, and
+  # past that there would be nowhere to download the demo from to redeploy it without
+  # tagging again, which would create a new release for a reason that is not one.
+  #
+  # The jobs that PUBLISH carry a tag guard: without it, a dispatch from a branch would
+  # have tauri-action create a release named after the branch, because the name comes from
+  # github.ref_name.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or branch to build the demo from (empty = the current branch)'
+        required: false
+        type: string
+
+jobs:
+  build:
+    # Tags only: a manual dispatch must not publish a release, because the name comes
+    # from github.ref_name and from a branch it would create a release named after it.
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - platform: windows-latest
+            args: --target x86_64-pc-windows-msvc --bundles nsis --config updater-artifacts.json
+            target: x86_64-pc-windows-msvc
+            name: windows-x64
+          # Windows ARM64
+          - platform: windows-latest
+            args: --target aarch64-pc-windows-msvc --bundles nsis --config updater-artifacts.json
+            target: aarch64-pc-windows-msvc
+            name: windows-arm64
+          # Linux x64
+          - platform: ubuntu-22.04
+            args: --target x86_64-unknown-linux-gnu --bundles deb,appimage --config updater-artifacts.json
+            target: x86_64-unknown-linux-gnu
+            name: linux-x64
+          # macOS x64 (Intel)
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin --bundles app,dmg --config updater-artifacts.json
+            target: x86_64-apple-darwin
+            name: macos-x64
+          # macOS ARM64 (Apple Silicon)
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin --bundles app,dmg --config updater-artifacts.json
+            target: aarch64-apple-darwin
+            name: macos-arm64
+
+    runs-on: ${{ matrix.platform }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Rust cache
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: ${{ matrix.target }}
+
+      # Linux dependencies for Tauri 2.x
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      # Install Node.js dependencies
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      # Build the Tauri app
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The updater refuses anything not signed by the key whose public half is in
+          # tauri.conf.json. If these are missing the build fails here rather than
+          # publishing an update nobody can install.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # The signatures are uploaded; the manifest is not. Five platforms writing one
+          # latest.json means five writes to the same name, the last one wins, and the
+          # manifest ends up describing whichever platform finished last. That is the race
+          # Skima has been living with, reported as "none of the fallback platforms were
+          # found". It is composed once, afterwards, by the updater-manifest job below,
+          # from the signatures every platform has by then uploaded.
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: true
+          tagName: ${{ github.ref_name }}
+          releaseName: '${{ github.ref_name }}'
+          releaseBody: |
+            Download the installer for your platform below.
+            What changed in this version: [CHANGELOG](https://github.com/henfrydls/daylo/blob/main/CHANGELOG.md).
+
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | Windows | `.exe` | Installer. Pick x64 unless you know your PC is ARM. |
+            | macOS | `.dmg` | Disk image. Apple Silicon (M1 and later) or Intel. |
+            | Linux | `.deb`, `.AppImage` | Debian package or portable AppImage, for Intel and AMD computers. |
+            | Android | `.apk` | Direct install. Works on phones and tablets from about 2017 onwards. |
+
+            The list below also has files ending in `.sig` and `.app.tar.gz`. Those are for the updater inside Daylo, not for you: pick the file from the table above.
+
+            ### First time opening Daylo
+
+            Daylo is not yet registered with Apple, Microsoft or Google, so each system shows a warning the first time. It is the same warning any small independent app gets. Here is how to get past it once:
+
+            **Windows.** If SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**.
+
+            **macOS.** Open the `.dmg`, drag Daylo to Applications and open it. macOS will say it could not verify the app. Click **Done** (not Move to Trash), then open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. You only do this once.
+
+            **Android.** Download `Daylo-android-arm64.apk` on your phone and open it. If Play Protect warns about an unknown developer, tap **More details** and then the small **Install anyway** link. Installing over Daylo 1.1.1 or later keeps your data.
+
+            **Linux.** The `.deb` installs with your package manager. The AppImage needs to be made executable first (right-click → Properties → allow executing, or `chmod +x`).
+
+            Your data stays on your device. Daylo has no account, and no server stores your habits or the days you marked. One thing leaves your device unless you turn it off: an anonymous daily check-in that tells us the app is still in use. It carries a random number, the app version, your system and the date, and nothing else. The app tells you the first time it opens, and you can turn it off from the menu at any time.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  build-android:
+    # Tags only: a manual dispatch must not publish a release, because the name comes
+    # from github.ref_name and from a branch it would create a release named after it.
+    # Off in the lab. Android has no updater at all: a phone updates from a store or from a
+    # new APK, so this job is outside the path the lab exists to run. It would also fail
+    # here for the right reason, because the signing keystore of the real app is not in
+    # this repository and must not be.
+    if: false && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    name: Build (android-apk)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Named, not defaulted: the action's default list includes the retired `tools`
+      # package, which no longer exists and fails the step outright. The reasoning and the
+      # measurements behind these three are in ci.yml, on the same step.
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;35.0.0 platform-tools'
+
+      - name: Install Android NDK
+        run: sdkmanager "ndk;29.0.14206865"
+
+      - name: Install Rust stable with Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: android
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Install Tauri CLI
+        run: npm install --save-dev @tauri-apps/cli
+
+      - name: Build Android APK (arm64 only)
+        run: npx tauri android build --apk --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK_PATH="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+          ALIGNED_PATH="src-tauri/gen/android/app/build/outputs/apk/universal/release/Daylo-android-arm64.apk"
+
+          # The keystore HAS to come from secrets. It used to be generated here with
+          # 'keytool -genkey', which produced a new key on every build that existed only on
+          # that runner. Android requires an identical signature to update, so every APK
+          # published that way is unable to receive updates: the user has to uninstall, and
+          # for a local-first app that erases their data. We would rather the build fail
+          # than publish that again.
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not in secrets. Aborting instead of"
+            echo "::error::generating an ephemeral key: an APK signed with a key different"
+            echo "::error::from the previous version's cannot be installed over it, and"
+            echo "::error::uninstalling erases the user's local data."
+            echo "::error::Set ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,"
+            echo "::error::ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD in the repo secrets."
+            exit 1
+          fi
+          for v in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "$(eval echo "\${$v:-}")" ]; then
+              echo "::error::Missing secret $v"; exit 1
+            fi
+          done
+
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.jks
+          trap 'rm -f release.jks' EXIT
+
+          BT="${ANDROID_HOME}/build-tools/$(ls ${ANDROID_HOME}/build-tools/ | tail -1)"
+
+          "$BT/zipalign" -f 4 "$APK_PATH" "$ALIGNED_PATH"
+
+          "$BT/apksigner" sign \
+            --ks release.jks \
+            --ks-pass "env:ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "env:ANDROID_KEY_PASSWORD" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            "$ALIGNED_PATH"
+
+          # Leave the fingerprint in the build log. If the key ever changes again, it shows
+          # up here and not six months later in a published APK.
+          echo "--- signature of the APK about to be published ---"
+          "$BT/apksigner" verify --print-certs "$ALIGNED_PATH" | grep -iE 'SHA-256|Subject'
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/Daylo-android-arm64.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The landing page's web demo. The application is entirely web based, with Tauri only
+  # wrapping it, so a 'vite build' with base '/demo/' produces a static site that works
+  # under that path, with no container and no server. Verified in a real browser: it
+  # renders, gives no 404s, and the create, tick and reload cycle keeps the data.
+  #
+  # The artifact comes out CLEAN, with no analytics: the landing page's script is injected
+  # by the website deployment over this same artifact. That way the application repository
+  # holds nothing that exists only for the web.
+  build-demo:
+    name: Build web demo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # A dispatch can ask for a specific tag, to rebuild the demo of a published
+          # version exactly as it was.
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Build demo with /demo/ base
+        run: npx vite build --base=/demo/ --outDir dist-demo
+
+      - name: Point the PWA manifest at /demo/
+        run: node scripts/fix-demo-manifest.mjs dist-demo /demo/
+
+      - name: Check the artifact ships without analytics
+        run: |
+          # Defence in depth with the SAME list as the CI, not a trimmed copy: it checks
+          # what is actually going to be deployed. If the landing page's script ever ended
+          # up here by mistake, the deploy would publish a demo that phones home, built
+          # from the same bundle that ships inside the desktop application.
+          #
+          # '--text-only' because this is a bundle: package names disappear on minification
+          # and URL strings do not.
+          scripts/check-no-analytics.sh --text-only dist-demo
+          echo "index.html: $(wc -c < dist-demo/index.html) bytes, paths based at /demo/"
+
+      - name: Upload demo artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: daylo-web-demo
+          path: dist-demo/
+          retention-days: 90
+          if-no-files-found: error
+
+  # Create a summary job that runs after all builds complete
+  # Composed once, after every platform has uploaded its signature, and the only writer of
+  # latest.json. See scripts/updater-manifest.js for why the action is told not to write
+  # one itself.
+  updater-manifest:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
+    runs-on: ubuntu-22.04
+    name: Updater manifest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Refuses if a platform is missing, if two artifacts claim one platform, if the
+      # release note is absent, too long, or word for word the one the previous version
+      # shipped with. A manifest written without every platform publishes cleanly and
+      # leaves one platform's worth of people never offered an update again.
+      - name: Compose it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/updater-manifest.js "${{ github.ref_name }}"
+
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" latest.json --clobber --repo "${{ github.repository }}"
+
+      # The question that covers both ways /releases/latest can surprise us, and it asks
+      # the URL the app itself uses rather than the API. It skips prereleases, and it is
+      # also whatever GitHub has marked as latest, which can be moved by hand. So it does
+      # not ask "is this a prerelease?", it asks "does the address the app reads give back
+      # the version I just published?".
+      #
+      # Written as a step and not as a line in docs/RELEASING.md on purpose: a step runs
+      # whether or not anyone remembers it.
+      - name: The address the app reads gives back this version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          url="https://github.com/${{ github.repository }}/releases/latest/download/latest.json"
+          for attempt in 1 2 3 4 5; do
+            served=$(curl -fsSL "$url" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' 2>/dev/null) || served=""
+            [ -n "$served" ] && break
+            echo "Attempt $attempt: the manifest is not being served yet."
+            sleep 10
+          done
+
+          expected="${TAG#v}"
+          if [ -z "$served" ]; then
+            echo "::error::$url served nothing readable after five tries."
+            echo "::error::Everyone on an earlier version will keep being told they are up to date."
+            exit 1
+          fi
+          if [ "$served" != "$expected" ]; then
+            echo "::error::$url says $served and this release is $expected."
+            echo "::error::Either it is not the latest release GitHub knows about, or the"
+            echo "::error::manifest did not replace the previous one. Nobody will be offered $expected."
+            exit 1
+          fi
+          echo "The address the app reads gives back $served."
+
+  release-summary:
+    needs: [build, build-android, build-demo]
+    runs-on: ubuntu-latest
+    # The repository has default_workflow_permissions set to "read", so without declaring
+    # this 'gh release upload' returns 403. The other two jobs already declare it; this one
+    # did not need it until it started publishing assets.
+    permissions:
+      contents: write
+    # 'always()' would also run when the run is cancelled, and then stable copies and a
+    # SHA256SUMS.txt covering only what was uploaded up to that instant would get published.
+    # The coverage check does not protect against that: both counts would see the same
+    # half finished release.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - name: Check build results
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ] && [ "${{ needs.build-android.result }}" == "success" ]; then
+            echo "All builds completed successfully!"
+            echo "Release artifacts have been uploaded to: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          else
+            echo "Some builds failed. Check the individual build logs for details."
+            exit 1
+          fi
+
+      # 'always()' is essential: the previous step does 'exit 1' if any build failed, and
+      # without this this step would never run in that case, which would leave Windows,
+      # Linux and Android without a stable named copy even though they DID build, breaking
+      # their links. The per platform degradation inside 'stage' only helps if the step
+      # gets to run at all.
+      - name: Publish stable named copies and SHA256SUMS
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          mkdir -p assets && cd assets
+
+          # The API already publishes the sha256 of each asset, so nothing needs rehashing.
+          # It is read BEFORE uploading the copies so the map holds only the originals; each
+          # copy then inherits the hash of the asset it comes from.
+          # How many assets there should be, to detect a truncated map.
+          n_expected=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets | length') || {
+            echo "::error::Could not query the asset list of $TAG."; exit 1; }
+
+          declare -A digest_of
+          # Counted by hand rather than with ${#digest_of[@]}: under 'set -u' an ASSOCIATIVE
+          # array that is declared and empty gives "unbound variable" when its length is
+          # queried (indexed ones do not), so the guard below would never be evaluated.
+          n_assets=0
+          # The digest is extracted with '// ""' and 'sub' rather than 'ltrimstr': if an
+          # asset carries a null digest, 'ltrimstr' aborts jq with "startswith() requires
+          # string inputs" AFTER having emitted the previous lines. Being inside a process
+          # substitution, 'pipefail' does not see that failure, so the map would be silently
+          # truncated and the job would go green with an incomplete SHA256SUMS.txt.
+          #
+          # The NAME comes first and the digest second, not the other way round: a tab is
+          # whitespace, so 'read' collapses an empty first field and shifts the values. With
+          # the digest first, an asset with no digest put the name into the sha variable and
+          # left the name variable empty. With the name first, which is never empty, a
+          # missing digest looks like what it is and the asset can be named.
+          while IFS=$'\t' read -r name sha; do
+            [ -z "${name:-}" ] && continue
+            if [ -z "${sha:-}" ]; then
+              echo "::error::The API carries no digest for asset '$name'. Without it its"
+              echo "::error::hash cannot be published without downloading and computing it."
+              exit 1
+            fi
+            digest_of["$name"]="$sha"
+            n_assets=$((n_assets + 1))
+          done < <(gh api "repos/$REPO/releases/tags/$TAG" \
+                     --jq '.assets[] | [.name, ((.digest // "") | sub("^sha256:";""))] | @tsv')
+
+          if [ "$n_assets" -eq 0 ]; then
+            echo "::error::The API returned no assets for $TAG. Without the digests"
+            echo "::error::SHA256SUMS.txt cannot be published without downloading everything."
+            exit 1
+          fi
+          if [ "$n_assets" -ne "${n_expected:-0}" ]; then
+            echo "::error::The API returned $n_assets digests out of $n_expected assets."
+            echo "::error::Publishing an incomplete SHA256SUMS.txt is worse than not doing it."
+            exit 1
+          fi
+
+          # Only what needs renaming gets downloaded. The AppImage is 81 MB, three quarters
+          # of the release's weight, and is not copied (duplicating it is not justified until
+          # 'strip' slims it down), so it is not fetched: its hash comes from the API anyway.
+          # The APK is already published under its final name and needs no touching either.
+          gh release download "$TAG" --repo "$REPO" --clobber \
+            --pattern '*.exe' --pattern '*.dmg' --pattern '*.deb' || {
+            # 'gh release download' also exits 1 when simply nothing matches, which is what
+            # happens if all five desktop builds failed. That is not a download failure, and
+            # saying so sends people looking in the wrong place. Warn and carry on: 'stage'
+            # will report every copy that is missing, and the SHA256SUMS of the APK, which
+            # does exist, gets published anyway.
+            echo "::warning::The download brought no desktop installer for $TAG."
+            echo "::warning::Either those builds failed, or the release does not have them yet."
+          }
+
+          # Stable named copies so the landing page can link to
+          # /releases/latest/download/<name> without the version inside the URL. The
+          # versioned names are kept: whoever archives installers can tell them apart.
+          #
+          # Each copy is handled INDEPENDENTLY and on purpose. If one platform's runner
+          # fails (it happens, and not because of the code), the release exists without that
+          # artifact; aborting here would leave the platforms that DID build without a
+          # stable copy, and their links on the landing page would 404. One failed build
+          # degrades one row of the table, not all of them.
+          #
+          # NOTE for whoever adds more packaging jobs: the patterns below ABORT if one
+          # matches more than a single file. If some day a job uploads another Windows
+          # installer to THIS SAME release, for example the Microsoft Store package, which
+          # needs webviewInstallMode=offlineInstaller and weighs over 100 MB against the
+          # 2 MB of the NSIS one, it has to be named so that it does NOT match
+          # 'Daylo_*_x64-setup.exe', or this step falls over and no platform gets its copy.
+          staged=()
+          missing=()
+          declare -A source_of
+
+          stage() {
+            local pattern="$1" target="$2" candidates=() f n source
+            # The real existence of each candidate is checked rather than trusting the glob:
+            # 'nullglob' only removes patterns WITH a wildcard.
+            for f in $pattern; do [ -f "$f" ] && candidates+=("$f"); done
+            n=${#candidates[@]}
+            if [ "$n" -eq 0 ]; then
+              echo "::warning::No asset matches '$pattern'; skipping $target. Its link on"
+              echo "::warning::the landing page will 404 until the next release includes it."
+              missing+=("$target")
+              return 0
+            fi
+            if [ "$n" -gt 1 ]; then
+              # Real ambiguity: choosing wrong would publish a binary under a name that
+              # promises something else.
+              echo "::error::'$pattern' matches $n files and cannot be resolved:"
+              printf '::error::  %s\n' "${candidates[@]}"
+              exit 1
+            fi
+            source="${candidates[0]}"
+            if ! cp "$source" "$target"; then
+              echo "::error::Could not copy '$source' to '$target'"
+              exit 1
+            fi
+            staged+=("$target")
+            source_of["$target"]="$source"
+            echo "  $source -> $target"
+          }
+
+          stage 'Daylo_*_x64-setup.exe'    Daylo-windows-x64-setup.exe
+          stage 'Daylo_*_arm64-setup.exe'  Daylo-windows-arm64-setup.exe
+          stage 'Daylo_*_aarch64.dmg'      Daylo-macos-apple-silicon.dmg
+          stage 'Daylo_*_x64.dmg'          Daylo-macos-intel.dmg
+          stage 'Daylo_*_amd64.deb'        Daylo-linux-amd64.deb
+
+          if [ ${#staged[@]} -eq 0 ]; then
+            # No abort: this could be a release where only the APK came out. Aborting here
+            # would also take down SHA256SUMS.txt, which covers the assets that DO exist,
+            # and would leave the release with no way to verify a download at all.
+            echo "::warning::No stable named copy was staged: the release has no desktop"
+            echo "::warning::installers under the expected names."
+            echo "::warning::Every /releases/latest/download/ link will 404 until the next"
+            echo "::warning::release includes them. SHA256SUMS.txt is published anyway,"
+            echo "::warning::with whatever assets exist."
+          fi
+
+          # SHA256SUMS covering everything published. The desktop installers are not
+          # signed, so Windows and macOS warn about an "unknown publisher"; this file is the
+          # only thing that lets someone check for themselves that what they downloaded is
+          # what the CI built, without having to take our word for it.
+          #
+          # Built BEFORE uploading anything, so there is a single upload at the end.
+          : > SHA256SUMS.txt
+          for name in "${!digest_of[@]}"; do
+            # On a re-run the release already holds the previous SHA256SUMS.txt and last
+            # time's stable copies. Without these two skips, the file would reference itself
+            # with its old hash, so 'sha256sum -c' would report FAILED on the file itself,
+            # and the copies would come out duplicated, once per loop.
+            [ "$name" = "SHA256SUMS.txt" ] && continue
+            already_a_copy=0
+            for c in "${staged[@]}"; do
+              [ "$name" = "$c" ] && { already_a_copy=1; break; }
+            done
+            [ "$already_a_copy" -eq 1 ] && continue
+            printf '%s  %s\n' "${digest_of[$name]}" "$name" >> SHA256SUMS.txt
+          done
+          for copy in "${staged[@]}"; do
+            orig="${source_of[$copy]}"
+            sha="${digest_of[$orig]:-}"
+            if [ -z "$sha" ]; then
+              # Can happen if the API brought the asset with a null digest: better to abort
+              # than publish a line with no hash, which 'sha256sum -c' would read as a
+              # broken format.
+              echo "::error::The API gave no digest for '$orig', so the hash of its copy"
+              echo "::error::'$copy' cannot be published without computing it by hand."
+              exit 1
+            fi
+            printf '%s  %s\n' "$sha" "$copy" >> SHA256SUMS.txt
+          done
+          sort -k2 -o SHA256SUMS.txt SHA256SUMS.txt
+          echo "--- SHA256SUMS.txt ---"; cat SHA256SUMS.txt
+
+          gh release upload "$TAG" --repo "$REPO" --clobber "${staged[@]}" SHA256SUMS.txt || {
+            echo "::error::Uploading the stable named assets failed."; exit 1; }
+
+          # Summary visible on the run's front page: a ::warning:: gets lost among the logs,
+          # and a missing platform has to be visible without opening anything.
+          {
+            echo "### Stable named assets"
+            echo
+            echo "| Copy | Status |"
+            echo "|---|---|"
+            for a in "${staged[@]}"; do echo "| \`$a\` | published |"; done
+            for a in "${missing[@]+"${missing[@]}"}"; do echo "| \`$a\` | **MISSING** (build unavailable) |"; done
+            echo
+            echo "\`SHA256SUMS.txt\` covers $(grep -c . SHA256SUMS.txt) files, with the hashes"
+            echo "the releases API publishes itself."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,139 @@
+[package]
+name = "activity-tracker"
+version = "1.4.0"
+description = "Activity Tracker with GitHub-style contribution calendar"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "activity_tracker_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Held to 2.10 rather than left on a caret. `tauri build` refuses to run when this crate
+# and @tauri-apps/api disagree on major.minor, the npm side is pinned to 2.10.1, and 2.10.2
+# is the newest this crate has: a `cargo update` that moved it to 2.11 would break the
+# build for a reason that looks unrelated to whatever prompted the update. The pair moves
+# together or not at all.
+tauri = { version = "~2.10", features = [] }
+tauri-plugin-shell = "2"
+# For the anonymous check-in, and chosen over reqwest for two measured reasons. reqwest is
+# already in the lock as somebody else's dependency, but there is no TLS backend in the
+# tree at all — no rustls, no native-tls, no openssl — so either way the whole stack gets
+# added and reqwest buys nothing. And this one is blocking with a tiny surface, which is
+# what lets src/checkin.rs stay short enough to read in one sitting, which is the only
+# guarantee anyone has about what the native side sends.
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Every platform, not just the desktop: Android needs the same save dialog, where it is
+# the system document picker instead of a portal.
+#
+# default-features = false drops this plugin's default "gtk3" backend, and that is the
+# whole point of the line. With gtk3 the save dialog is a GTK dialog running inside the
+# Flatpak sandbox: it would show the sandbox's own filesystem, the user would pick a
+# location, and the file would land in the app's private directory again, which is exactly
+# the bug the dialog is here to fix. xdg-portal routes the dialog through the desktop
+# portal, so the path that comes back is the user's real one and no --filesystem
+# permission is needed. The cost is that a Linux system with no portal running cannot open
+# the dialog at all, and the app says so instead of hiding the file. The feature is inert
+# off Linux, because rfd is not built for Windows dialogs, Android or iOS.
+#
+# Held to 2.7 for the same reason as tauri itself: @tauri-apps/plugin-dialog is pinned to
+# 2.7.0, and 2.7.1 upwards require @tauri-apps/api 2.11, which has no matching tauri crate.
+tauri-plugin-dialog = { version = "~2.7", default-features = false, features = ["xdg-portal"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-opener = "2"
+
+# The updater, and the relaunch that finishes it. Desktop only, and not by preference:
+# Tauri's updater does not exist on Android or iOS, where the store is the only route.
+#
+# Both are held to a tilde for the same reason as tauri itself, and the constraint that
+# decides is the npm side rather than this one. Measured on 2026-09-26: the crate
+# tauri-plugin-updater 2.12 still asks only for tauri ^2.10, but @tauri-apps/plugin-updater
+# 2.12.0 requires @tauri-apps/api ^2.11, and this repository is pinned to 2.10.1 because
+# that is the newest api the 2.10 tauri crate accepts. Taking the newest plugin would break
+# `tauri build` at the version check, with an error about the api and not about the plugin.
+tauri-plugin-updater = "~2.10"
+tauri-plugin-process = "~2.3"
+
+# Both of these are already compiled on Linux as dependencies of the dialog plugin (zbus
+# arrives through ashpd and through tauri-plugin-opener, tokio through rfd), so declaring
+# them adds nothing to the build. They are here to ask the desktop portal directly whether
+# it is running, which is the only way to tell a cancelled dialog from one that never
+# opened. See save_dialog_available in src/lib.rs.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
+tokio = { version = "1", features = ["time"] }
+
+# Android only. The document picker hands back a content:// URI rather than a path, and
+# std::fs cannot write to one; this plugin resolves it through the platform. The desktop
+# writes with the app's own command and has no use for this.
+#
+# Held to 2.5 like the others. The version check covers every plugin pair, not only tauri
+# and @tauri-apps/api: this crate arrives on every platform anyway as a dependency of the
+# dialog plugin, so a 2.4 npm package against a 2.5 crate failed the desktop builds too.
+# Adding a plugin here: its Kotlin models are built by Jackson through reflection, and the
+# release build minifies, so they survive only because proguard-rules.pro keeps
+# app.tauri.** with its members. Test on a release APK; a debug one does not minify and
+# cannot reproduce the failure. docs/RELEASING.md explains what it looks like when it bites.
+[target.'cfg(target_os = "android")'.dependencies]
+# The mailto: of the feedback invitation needs this here: the shell plugin's open reaches
+# for xdg-open through the `open` crate, and Android has none. See the comment in lib.rs.
+tauri-plugin-opener = "2"
+tauri-plugin-fs = "~2.5"
+# Held to 2.3 and not left to resolve: the crate's 2.4.0 is fine against tauri 2.10, but
+# its npm counterpart wants @tauri-apps/api 2.11, which has no matching tauri crate. 2.3.3
+# on npm asks for ^2.8.0 and the pair lines up.
+tauri-plugin-notification = "~2.3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Both are already in the tree through tauri and its dialog plugin; they are named here so
+# the check for a missing WebView2 runtime can use them directly, before there is an app.
+# winreg reads the version the runtime records about itself. rfd puts a system window on
+# the screen without an event loop, which is the only kind of window that can exist at
+# that point, and common-controls-v6 is what lets that window have buttons that say what
+# they do instead of OK and Cancel.
+winreg = "0.55"
+# Also already in the tree through tauri, and named here for one call:
+# GetCurrentPackageFullName, which is how a process asks whether it is running
+# inside an MSIX package. A copy installed from the Microsoft Store is updated by
+# the Store, so Daylo has nothing to say to it. See src/packaging.rs.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_Packaging_Appx"] }
+rfd = { version = "0.16", features = ["common-controls-v6"] }
+
+# Only for the test that reads tauri.conf.json and checks each `plugins.<name>` block
+# against the config type that plugin actually accepts.
+#
+# The app registers these two on Android alone, but the failure they guard against is not
+# platform specific: Tauri deserializes the block with serde_json::from_value in its own
+# plugin initialisation, the same code on every target, and aborts the app when it does
+# not fit. So the test needs the crates on whatever machine runs `cargo test`. Same
+# version requirements as the real dependencies above, or the test would be checking a
+# type the app does not ship.
+[dev-dependencies]
+tauri-plugin-fs = "~2.5"
+tauri-plugin-notification = "~2.3"
+# Only for the tests: it brings tauri::test::mock_app, which is what lets the commands be
+# called for real instead of testing a helper next to them and hoping they use it.
+tauri = { version = "~2.10", features = ["test"] }
+# The integration test drives the updater directly. An integration test links only
+# against the library and the dev-dependencies, so the plugin has to be named here as
+# well as in the target section above.
+tauri-plugin-updater = "~2.10"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = false

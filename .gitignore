@@ -1,0 +1,55 @@
+# Claude
+.claude/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+dist-demo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+playwright-report/
+test-results/
+
+# Tauri
+src-tauri/target/
+
+# Local storage backup
+*.sqlite
+*.db
+nul
+
+# Firma de apps — NUNCA commitear (si se filtran, hay que rotar la llave
+# y Android deja de poder actualizar las instalaciones existentes)
+*.jks
+*.keystore
+keystore.properties
+*.p12
+*.mobileprovision
+
+# Bytecode de Python. Se genera solo al importar o al compilar un script, va atado a la
+# versión del intérprete que lo escribió, y no aporta nada a nadie que clone el repo.
+__pycache__/
+*.pyc

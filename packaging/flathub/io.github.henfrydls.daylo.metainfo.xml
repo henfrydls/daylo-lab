@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.henfrydls.daylo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Daylo</name>
+  <summary>See your whole year at a glance</summary>
+  <developer id="io.github.henfrydls">
+    <name>DLSLabs</name>
+  </developer>
+  <description>
+    <p>Daylo is a habit tracker with a calendar you can read at a glance. Tick off what you did today and the year fills in with color, so you can see a streak forming or a month you let slip without reading a single number.</p>
+    <p>Your data stays on your device. Daylo has no account, and no server stores your habits or the days you marked. One thing leaves your device unless you turn it off: an anonymous daily check-in that tells us the app is still in use. It carries a random number, the app version, your system and the date, and nothing else. The app tells you the first time it opens, and you can turn it off from the menu at any time. You can export a backup whenever you want and import it on another machine.</p>
+    <ul>
+      <li>Year view: twelve month heatmaps side by side</li>
+      <li>Month view: a dot per habit on each day, one tap to mark it</li>
+      <li>Current streak, longest streak and monthly completion</li>
+      <li>Export and import your data as JSON or CSV</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.henfrydls.daylo.desktop</launchable>
+  <url type="homepage">https://daylo.henfrydls.com</url>
+  <url type="bugtracker">https://github.com/henfrydls/daylo/issues</url>
+  <url type="vcs-browser">https://github.com/henfrydls/daylo</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://daylo.henfrydls.com/assets/daylo-year-view.png</image>
+      <caption>The year at a glance, with activities and statistics</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://daylo.henfrydls.com/assets/daylo-month-view.png</image>
+      <caption>A month, with a dot per habit on each day</caption>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#d1fae5</color>
+    <color type="primary" scheme_preference="dark">#065f46</color>
+  </branding>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.4.0" date="2026-09-30">
+      <url>https://github.com/henfrydls/daylo/releases/tag/v1.4.0</url>
+      <description>
+        <p>Daylo now tells you when a new version is out. A line under the header says which version it is, and on Windows, Mac and the Linux AppImage the app downloads it, installs it and opens itself again; the Debian and Ubuntu package needs an administrator password that Daylo does not ask anyone for, so it points you at the downloads page instead. Check for new versions is in the menu if you would rather look yourself, and it is also where you can stop Daylo looking on its own. Asking how it has been going is now five stars rather than an email, and it comes after a week of use instead of two. The line about the anonymous check-in says when it is off.</p>
+      </description>
+    </release>
+    <release version="1.3.0" date="2026-09-16">
+      <url>https://github.com/henfrydls/daylo/releases/tag/v1.3.0</url>
+      <description>
+        <p>After about two weeks of use, Daylo asks once how it has been going, and opens an email if you want to answer. It also has an anonymous check-in. On a new installation it is on, and the app says so the first time it opens, with a link to look at it or turn it off; installations updating from an earlier version keep it off. Once a day at most it sends a random number made on your device, the app version, your system and the date, and nothing about what you track. The switch is in the menu, and turning it off sends one last note and deletes the number.</p>
+      </description>
+    </release>
+    <release version="1.2.0" date="2026-09-13">
+      <url>https://github.com/henfrydls/daylo/releases/tag/v1.2.0</url>
+      <description>
+        <p>Daylo opens on the month, and the year is now one continuous calendar that can also be read a row per activity, or a block per week on a phone. The year can be walked with the arrow keys, saying the date and what you did on each day as you reach it. Android can remind you each evening at a time you choose. Streaks are counted one way everywhere: they no longer reset on the first of January, and they no longer read zero until the day is ticked. Tapping a button no longer leaves a ring around it.</p>
+      </description>
+    </release>
+    <release version="1.1.3" date="2026-09-10">
+      <url>https://github.com/henfrydls/daylo/releases/tag/v1.1.3</url>
+      <description>
+        <p>Exporting now asks where to save the file and says where it went. Days in the year view no longer stretch when the pointer is over them, and the checkbox is drawn by Daylo rather than by the desktop theme. A backup is named after the local date rather than the one in UTC.</p>
+      </description>
+    </release>
+    <release version="1.1.2" date="2026-09-09">
+      <url>https://github.com/henfrydls/daylo/releases/tag/v1.1.2</url>
+      <description>
+        <p>The app file is now called Daylo, backups are named daylo-backup, and a CSV export is no longer called a backup because only JSON can be imported back.</p>
+      </description>
+    </release>
+    <release version="1.1.1" date="2026-09-07">
+      <url>https://github.com/henfrydls/daylo/releases/tag/v1.1.1</url>
+      <description>
+        <p>Stable download names, a permanent Android signing key, and the toggle log that keeps notes when a day is unmarked.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,257 @@
+@import 'tailwindcss';
+
+/* Custom CSS Variables - SaaS Modern Style */
+:root {
+  /* Backgrounds */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+
+  /* Text */
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+
+  /* Borders */
+  --border-default: #e5e7eb;
+  --border-focus: #3b82f6;
+
+  /* Activity States */
+  --completed: #10b981;
+  --partial: #f59e0b;
+  --missed: #ef4444;
+  --planned: #3b82f6;
+  --empty: #f3f4f6;
+
+  /* Heatmap Levels */
+  --level-0: #f3f4f6;
+  --level-1: #d1fae5;
+  --level-2: #6ee7b7;
+  --level-3: #34d399;
+  --level-4: #10b981;
+
+  /* M3 Motion Tokens */
+  --ease-emphasized-decel: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-emphasized-accel: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* View transition keyframes */
+@keyframes view-drill-down {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes view-drill-up {
+  from {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Month navigation slide keyframes */
+@keyframes slide-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-30%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(30%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Checkbox bounce: the control itself, not the row it sits in. A row that jumps 20%
+   moves the name, the colour dot and the tick along with it, which is what people
+   noticed. */
+@keyframes check-bounce {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* The app's own checkbox.
+ *
+ * It used to be the platform control, which is drawn by the desktop theme: the same app
+ * showed a blue GTK square on one machine and an olive one on another, next to an
+ * emerald row and an emerald tick. accent-color fixed the colour and kept the platform's
+ * shape, which still read as borrowed. So the whole thing is drawn here.
+ *
+ * Drawing it ourselves makes the contrast ours too, which it was not while the platform
+ * owned the control. WCAG 1.4.11 asks 3:1 for graphical objects, and the obvious palette
+ * does not reach it: a white tick on emerald-500 is 2.54:1 and a gray-300 border is
+ * 1.47:1 on white, near invisible. These colours were measured, not chosen by eye:
+ *
+ *   white tick on emerald-600      3.77:1
+ *   gray-500 border on white       4.83:1
+ *   gray-500 border on emerald-50  4.59:1
+ *   emerald-600 box on emerald-50  3.58:1
+ *
+ * That last one matters because the checked row is emerald-50: with an emerald-500 fill
+ * the box would nearly vanish into the row it is meant to mark.
+ */
+.app-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--color-gray-500);
+  border-radius: 4px;
+  background-color: #fff;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease-standard),
+    border-color 120ms var(--ease-standard);
+}
+
+/* Only where a pointer can actually hover. On a touch screen the hover state sticks to
+   whatever was tapped last, so without this the border stays emerald after tapping and
+   unticking, on a box that is no longer checked. */
+@media (hover: hover) {
+  .app-checkbox:hover:not(:checked) {
+    border-color: var(--color-emerald-600);
+  }
+}
+
+.app-checkbox:checked {
+  background-color: var(--color-emerald-600);
+  border-color: var(--color-emerald-600);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.5 3.5L13 5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 74%;
+}
+
+/* Keyboard only: a pointer user clicking the row should not light up a ring. outline
+   rather than a box-shadow ring so nothing can clip it. */
+.app-checkbox:focus-visible {
+  outline: 2px solid var(--color-emerald-600);
+  outline-offset: 2px;
+}
+
+.checkbox-bounce {
+  animation: check-bounce 150ms var(--ease-standard);
+}
+
+/* Someone who asked their system for less movement gets the colour change and nothing
+   else. The class stays on the element; only the movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  .checkbox-bounce {
+    animation: none;
+  }
+}
+
+/* Two changes, and the second one is why a wheel works at all.
+ *
+ * `overscroll-behavior-y: none` was the thing that stopped the page from scrolling. It is
+ * meant to stop a scroll from chaining out of a box, and that is what Chromium does with
+ * it; WebKit takes it further and the page does not scroll at all, from any pointer
+ * position, in any view. The scrollbar still worked and so did window.scrollTo, which is
+ * why it went unnoticed for six months and why four test benches said the page was fine:
+ * all of them scrolled by script, and none of them ever turned a wheel.
+ *
+ * Measured, one override at a time, at 1200x835 with eight activities and a full year.
+ * In Chromium every override frees the wheel; in WebKit exactly one does, and it is this
+ * one. The horizontal half stays, because that is the half the rule was added for: a view
+ * swiped sideways on a phone must not leave the page scrollable across.
+ *
+ * `clip` rather than `hidden` is the second change and it stands on its own. `hidden`
+ * does not only clip: it makes the body a scrolling box, so a wheel lands in a box with
+ * nothing to scroll instead of on the page. `clip` clips and creates no such box. It
+ * needs Chrome 90, Safari 16 or Firefox 81, all below the floor this stylesheet already
+ * sets with oklch(). */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+#root {
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Ripple touch feedback */
+@keyframes ripple {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-container::after {
+  content: '';
+  display: block;
+  position: absolute;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.15);
+  transform: scale(0);
+  opacity: 1;
+  pointer-events: none;
+  top: 0;
+  left: 0;
+}
+
+.ripple-container:active::after {
+  animation: ripple 400ms var(--ease-standard) forwards;
+}

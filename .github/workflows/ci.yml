@@ -1,0 +1,807 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  # Also for pull requests aimed at another product branch, not only at main. A PR built
+  # on top of an open one is the only honest way to review a second change without
+  # showing the first one's diff again, and until now those arrived with no checks at
+  # all: the branch filter matches the pull request's base, so a stack was invisible to
+  # CI and could not be approved on the rule that everything must be green.
+  pull_request:
+    branches: [main, develop, 'product/**']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Run tests and linting
+  test:
+    runs-on: ubuntu-22.04
+    name: Test & Lint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Rust cache
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # Linux dependencies for Tauri 2.x
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev
+
+      # Install Node.js dependencies
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      # Run linting
+      - name: Run ESLint
+        run: npm run lint
+
+      # `tsc -b`, not `tsc --noEmit`. The root tsconfig.json is a solution file: it has
+      # "files": [] and nothing but references, so `tsc --noEmit` type checked an empty
+      # program and passed in about a second no matter what was in src. It was measured
+      # doing exactly that: a test file importing 'fs' and using __dirname, neither of
+      # which tsconfig.app.json allows, went straight through this step and was caught
+      # later by `npm run build`, which does run `tsc -b`. The step now checks what it
+      # says it checks, and fails where the name says it would.
+      - name: TypeScript check
+        run: npx tsc -b
+
+      # Run unit tests with coverage
+      - name: Run unit tests
+        run: npm run test:coverage -- --run
+
+      # Upload coverage report
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      # Check Rust code
+      - name: Rust format check
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      # --all-targets, and it is not decoration: without it clippy looks at the library
+      # and nothing else, so everything under src-tauri/tests/ went unreviewed. That
+      # directory was empty until the updater's signature test arrived, which is to say
+      # the first integration test this repository ever had would have been the first
+      # file no automatic check looked at.
+      - name: Rust clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Reads tauri.conf.json and checks every `plugins.<name>` block against the config
+      # type that plugin's own init() declares. Cheap, and it covers a gap the build
+      # checks cannot: they all compile the app and none of them start it, so a config
+      # block the plugin refuses passed all six of them and killed the app on the phone.
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      # Build frontend to ensure it compiles
+      - name: Build frontend
+        run: npm run build
+
+      # The landing page's demo is built with a different base ('/demo/'), and that can
+      # break on things the normal build does not: a hand written absolute path, an asset
+      # imported by URL. Building it here too means finding out in the pull request rather
+      # than in the release, which is where it would surface if it were only built on tag.
+      - name: Build demo (base /demo/)
+        run: |
+          npx vite build --base=/demo/ --outDir dist-demo
+          node scripts/fix-demo-manifest.mjs dist-demo /demo/
+
+      # Daylo promises that the user's data never leaves their device, and that promise
+      # rests entirely on the application containing no analytics or telemetry code. This
+      # checks it on every pull request, instead of leaving it to somebody remembering to
+      # look during review.
+      #
+      # The pattern list lives in scripts/check-no-analytics.sh and not here: this job and
+      # the one that builds the demo both call it, and duplicating it across the two
+      # workflows would let them drift, leaving one of them guaranteeing less than it says.
+      #
+      # The landing page's analytics script is NOT in this repository: the website
+      # deployment injects it over the already built artifact.
+      - name: Check for analytics and telemetry
+        run: |
+          # Direct declarations: searching for package and crate names does make sense
+          # here, because this is where somebody adds them. src-tauri is included because
+          # it is the door telemetry would come through into the bundled binary, which is
+          # exactly what the promise protects.
+          scripts/check-no-analytics.sh \
+            src index.html package.json \
+            src-tauri/Cargo.toml src-tauri/src src-tauri/capabilities
+
+          # In the lock file and the bundle only hosts and APIs are searched. The lock
+          # holds the complete dependency tree with its optional peers, and
+          # '@opentelemetry/api' is in there as a peer of vitest, not installed and never
+          # reaching the bundle, so searching for package names would give a false positive
+          # on day one. What covers the risk of a transitive SDK is its host in dist/:
+          # names get minified, URL strings do not.
+          scripts/check-no-analytics.sh --text-only package-lock.json dist dist-demo
+
+
+  # Android is the only platform whose build was never checked on a pull request: the APK
+  # was produced solely by release.yml, on tag. That was tolerable while nothing touched
+  # the Android side, and stops being tolerable now that reminders are coming, because
+  # they change the manifest, the permissions and the plugin list. A break there would
+  # have surfaced during a release, which is the worst moment to find out.
+  #
+  # WHAT IT CLAIMS: "the Android side still assembles". The manifest parses, Gradle
+  # configures, the Rust library cross compiles for aarch64 and an APK comes out.
+  # WHAT IT DOES NOT CLAIM: "the app works on a phone". There is no emulator here, and a
+  # notification that arrives after a reboot can only be proven on a real device.
+  build-check-android:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build Check (Android)
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # The packages are named because the action's default is not what it looks like.
+      # With no `packages:` input it runs `sdkmanager tools platform-tools`, and `tools`
+      # is the SDK's retired all-in-one package, which Google no longer publishes. Until
+      # recently that cost nothing: the runner's preinstalled command-line tools (12.0)
+      # still listed it. The action wants 16.0 and downloads it, and that sdkmanager
+      # cannot find `tools`, exits 1, and takes the whole job with it — before Gradle has
+      # been asked to do anything. This is what it looked like on 2026-09-14, in five
+      # workflows at once:
+      #
+      #   Warning: Failed to find package 'tools'
+      #   Error: The process '.../cmdline-tools/16.0/bin/sdkmanager' failed with exit code 1
+      #
+      # So the three are named, and they are what the build actually reaches for, read out
+      # of the project rather than guessed:
+      #
+      #   platforms;android-36    compileSdk = 36, src-tauri/gen/android/app/build.gradle.kts
+      #   build-tools;35.0.0      no buildToolsVersion is set, so AGP picks its own default,
+      #                           and AGP 8.11.0 (buildSrc/build.gradle.kts) has 35.0.0 in
+      #                           ToolsRevisionUtils.DEFAULT_BUILD_TOOLS_REVISION
+      #   platform-tools          adb, which the emulator smoke test drives
+      #
+      # All three ship on the ubuntu image today, so naming them costs a few seconds of
+      # "already installed" and buys the job back the day one of them stops shipping.
+      # If Tauri regenerates gen/android against a newer compileSdk, this list moves too.
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;35.0.0 platform-tools'
+
+      # No cache for the NDK: it is already on the ubuntu-latest image, so this resolves in
+      # under a second and there is nothing to cache. Measured, after caching it first and
+      # finding out that the cache was the cost:
+      #
+      #   no cache at all      restore 0s    sdkmanager 0s
+      #   cache populated      restore 15s   sdkmanager 1.6s   save 7.5s, rejected
+      #
+      # Caching it added about 22 seconds per run to save none, held 708 MB of the
+      # repository's 10 GB cache quota, and could evict the Rust cache, which is the one
+      # that pays: the Rust compile went from 191s cold to 74s warm.
+      #
+      # The step stays because a future image could stop shipping this version, and then
+      # this is what installs it. It costs nothing when it has nothing to do.
+      - name: Install Android NDK
+        run: sdkmanager "ndk;29.0.14206865"
+
+      - name: Install Rust stable with Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Same shared-key as the release job on purpose: both cross compile the same crate
+      # for the same target, so a pull request warms the cache the release will use.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: android
+          # Same reason as the NDK: a failure after the compile should not throw away the
+          # compile.
+          cache-on-failure: true
+
+      - name: Restore Gradle
+        id: gradle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-android-
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      # --debug on purpose: this job answers whether it assembles, and a debug build skips
+      # minification and signing. The release build is what release.yml does, on tag, with
+      # the real key.
+      - name: Build Android APK (debug, arm64)
+        run: npx tauri android build --apk --target aarch64 --debug
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+
+      # The APK is checked for what is inside it, not for existing. A zero byte file, or a
+      # zip without an AndroidManifest.xml, would satisfy a existence test and mean nothing.
+      - name: Verify the APK is a real package
+        run: |
+          set -uo pipefail
+          # globstar as well as nullglob: without it '**' behaves like a single '*' and only
+          # matches one level down. It happens to work today because the output lands in
+          # universal/debug, so the bug would stay hidden until Tauri changed the layout.
+          shopt -s nullglob globstar
+          apks=( src-tauri/gen/android/app/build/outputs/apk/**/debug/*.apk )
+          if [ ${#apks[@]} -eq 0 ]; then
+            echo "::error::The build reported success but produced no APK."
+            find src-tauri/gen/android/app/build/outputs -type f 2>/dev/null | head -20 || true
+            exit 1
+          fi
+          apk="${apks[0]}"
+          echo "APK: $apk ($(stat -c%s "$apk") bytes)"
+
+          # The listing is matched with bash instead of being piped into grep. Any
+          # 'something | grep -q' is a race under 'pipefail': grep exits the moment it
+          # matches, the writer gets SIGPIPE and returns 141, and the pipeline fails even
+          # though the match succeeded. Whether the writer finishes first depends on how
+          # much fits in the 64 KB pipe buffer, so it passes on one machine and fails on
+          # another. This listing is about 72 KB and it did exactly that: green locally,
+          # red on the runner, on a healthy APK. No pipe, no race.
+          listing=$(unzip -l "$apk")
+
+          if [[ "$listing" != *"AndroidManifest.xml"* ]]; then
+            echo "::error::$apk carries no AndroidManifest.xml, so it is not an APK."
+            head -20 <<< "$listing"
+            exit 1
+          fi
+          if [[ "$listing" != *"lib/arm64-v8a/"* ]]; then
+            echo "::error::No arm64-v8a native library inside the APK: the Rust side did"
+            echo "::error::not make it in, and the app would install and fail to start."
+            exit 1
+          fi
+          # 'grep -m5' rather than 'grep | head -5': head is another consumer that short
+          # circuits, so with more than five libraries it would cut grep and abort the step
+          # through the same SIGPIPE. -m5 stops grep itself, which needs no pipe at all.
+          grep -m5 -E 'lib/arm64-v8a/.*\.so' <<< "$listing" || true
+
+      # Saved here, not by a post step, so that 'if: always()' applies: actions/cache does
+      # not save when the job fails, and a red job is exactly when the cycle needs to be
+      # short. Only on a miss, because writing over an existing key logs a warning and
+      # wastes the upload.
+      - name: Save Gradle
+        if: always() && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+
+  # Verify Tauri builds (without uploading artifacts)
+  # The end to end suite, which until now existed and ran nowhere. Six of its tests had
+  # rotted unnoticed: three waited thirty seconds for a control that is only rendered for
+  # the other breakpoint, one matched two buttons at once, and two asserted against the
+  # brand heading instead of the month title. A suite nothing executes is not a safety
+  # net, it is a file.
+  #
+  # Its own job so that Test & Lint stays quick: that one is what everybody waits for.
+  e2e:
+    name: End to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      # Chromium and WebKit. WebKit is the engine the desktop and mobile apps really run,
+      # and the one whose layout differences have cost this project two releases, so it is
+      # worth the extra install time. --with-deps pulls the system libraries it needs,
+      # which is why this cannot be done on a developer machine without root.
+      - name: Install the browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Run the suite
+        run: npx playwright test
+
+      - name: Keep the report when something fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  build-check:
+    needs: test
+    runs-on: ${{ matrix.platform }}
+    # Explicit upper bound: without it, a process that fails to die would leave the job
+    # hanging until Actions' own default, which is 6 hours.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            name: Linux
+          - platform: windows-latest
+            name: Windows
+          - platform: macos-latest
+            name: macOS
+
+    name: Build Check (${{ matrix.name }})
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Rust cache
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # Linux dependencies for Tauri 2.x
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            xvfb \
+            x11-utils \
+            xdg-dbus-proxy
+
+      # Install Node.js dependencies
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      # Build Tauri app (debug mode for faster CI)
+      - name: Build Tauri app
+        run: npm run tauri:build -- --debug
+
+      # Smoke run: check that the binary STARTS, not only that it compiles. No unit test
+      # catches a startup failure that happens on one platform only, and without this it
+      # would surface when somebody downloads the published binary.
+      #
+      # WHAT IT CLAIMS: "the code starts on this platform". It is a per pull request guard.
+      # WHAT IT DOES NOT CLAIM: "the installer we publish starts". What runs here is the
+      # --debug profile, without going through NSIS or the DMG, and the runner has just
+      # compiled the binary, so it does not carry the mark of origin that triggers
+      # SmartScreen on Windows or Gatekeeper on macOS. Verifying the published artifact is
+      # a separate test, over release.yml, that would install the real package.
+      - name: Smoke run the binary (Linux and macOS)
+        if: runner.os != 'Windows'
+        # The binary is about to be started with an empty profile, which since 1.3 is a
+        # new installation: it would turn the check-in on and send one, and the server
+        # would count a runner as a person. Seven arrived in one evening before anybody
+        # noticed. With this set the app behaves as it does on the web: no check-in at
+        # all. See src-tauri/src/checkin.rs.
+        env:
+          DAYLO_DISABLE_CHECKIN: '1'
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          BIN="src-tauri/target/debug/Daylo"
+          if [ ! -x "$BIN" ]; then
+            echo "::error::No executable binary found at $BIN"
+            ls -la src-tauri/target/debug/ 2>/dev/null | head -20 || true
+            exit 1
+          fi
+
+          XVFB_PID=""
+          APP_PID=""
+          cleanup() {
+            [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null
+            [ -n "$XVFB_PID" ] && kill "$XVFB_PID" 2>/dev/null
+            return 0
+          }
+          trap cleanup EXIT
+
+          # Inherited state, before touching anything. On the Actions runner it turned out
+          # that XDG_RUNTIME_DIR IS defined and that there is no D-Bus session bus, and the
+          # webview starts anyway: neither of the two was the cause of the failure. They are
+          # still printed because in another environment they could be.
+          echo "inherited XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-<unset>}"
+          echo "inherited DBUS_SESSION_BUS_ADDRESS: ${DBUS_SESSION_BUS_ADDRESS:-<unset>}"
+
+          # An Actions runner has no user session, so XDG_RUNTIME_DIR does not exist. The
+          # WebKitGTK sandbox needs it for the D-Bus proxy socket, and without it launching
+          # the WebProcess can fail silently. In local testing the desktop session provided
+          # this variable, which is precisely the difference from the runner.
+          if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "${XDG_RUNTIME_DIR:-/nonexistent}" ]; then
+            XDG_RUNTIME_DIR=/tmp/xdg-runtime
+            mkdir -p "$XDG_RUNTIME_DIR"
+            chmod 700 "$XDG_RUNTIME_DIR"
+            export XDG_RUNTIME_DIR
+            echo "XDG_RUNTIME_DIR created at $XDG_RUNTIME_DIR"
+          fi
+
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # Our own Xvfb rather than 'xvfb-run': that script launches the command as a
+            # child and sits in 'wait' (xvfb-run:200 does not exec), so $! would be the
+            # wrapper's PID and not the app's. Killing the wrapper orphans the app: it gets
+            # no TERM, does not run its shutdown flush and does not close cleanly.
+            Xvfb :99 -screen 0 1280x1024x24 >xvfb.log 2>&1 &
+            XVFB_PID=$!
+            export DISPLAY=:99
+            # Wait for the SOCKET, not for a number of seconds: on a loaded runner a blind
+            # 'sleep' can let the app start before the display accepts connections, and then
+            # GTK aborts and the failure gets reported as "the binary died", diagnosing the
+            # application for an environment problem.
+            # The socket existing is not enough: an Xvfb that died on an earlier attempt
+            # leaves the file behind, and the application would start against a display that
+            # does not answer. The check goes INSIDE the loop: doing it once at the end
+            # would give a false negative with a display that is slow to accept connections.
+            display_ready=0
+            xvfb_died=0
+            for _ in $(seq 1 15); do
+              if ! kill -0 "$XVFB_PID" 2>/dev/null; then xvfb_died=1; break; fi
+              if command -v xdpyinfo >/dev/null 2>&1; then
+                xdpyinfo -display :99 >/dev/null 2>&1 && { display_ready=1; break; }
+              elif [ -S /tmp/.X11-unix/X99 ]; then
+                display_ready=1; break
+              fi
+              sleep 1
+            done
+            if [ "$display_ready" -ne 1 ]; then
+              if [ "$xvfb_died" -eq 1 ]; then
+                echo "::error::Xvfb died before accepting connections."
+              else
+                echo "::error::Display :99 did not answer within 15s."
+              fi
+              echo "::error::The problem is the runner environment, not the application"
+              echo "::error::starting up:"
+              cat xvfb.log 2>/dev/null || true
+              exit 1
+            fi
+            # With no GPU and no /dev/dri, WebKitGTK's WebProcess dies creating DMABUF/GBM
+            # buffers: the main process stays alive but the webview never loads.
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
+            export WEBKIT_DISABLE_COMPOSITING_MODE=1
+            export LIBGL_ALWAYS_SOFTWARE=1
+            # Explicit to take a variable out of the equation: without WAYLAND_DISPLAY GTK
+            # should pick x11 on its own, but if for any reason it tried another backend the
+            # failure would look like "the webview does not start".
+            export GDK_BACKEND=x11
+          fi
+
+          "$BIN" > smoke.log 2>&1 &
+          APP_PID=$!
+
+          # Sleep first and check AFTER: the other way round, the last check would land at
+          # t=9s and a binary that dies in the final second would pass the test.
+          for i in $(seq 1 10); do
+            sleep 1
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::The binary died after ~${i}s"
+              cat smoke.log 2>/dev/null
+              exit 1
+            fi
+          done
+          echo "The main process is still alive after 10s"
+
+          # "Alive" is not "started": if the webview fails, the main process stays up with
+          # a blank window and the loop above would call that fine.
+          #
+          # The BLOCKING check is the store, further down: the application having persisted
+          # its state proves the webview loaded and the JS ran, and does not depend on how
+          # WebKit organises its processes. The process tree stays as DIAGNOSTICS, not as a
+          # criterion: the WebProcess can be launched through 'bwrap' when the sandbox is
+          # active, and then it would not be a direct child of the binary even when
+          # everything works.
+          #
+          # Printed always, not only on failure: a red run with no process tree cannot be
+          # diagnosed from the log, which is what happened on the first real run.
+          echo "--- process tree, while the application is alive ---"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            ps -ef --forest 2>/dev/null | grep -iE 'Daylo|webkit|bwrap|Xvfb' \
+              | grep -v grep || true
+            echo "direct children of the binary: $(pgrep -P "$APP_PID" 2>/dev/null | wc -l || true)"
+          else
+            ps -ef 2>/dev/null | grep -iE 'Daylo|WebKit' | grep -v grep || true
+            echo "On macOS the webview is not judged by the tree: its processes are launchd"
+            echo "XPC services, not children of the binary. All that is verified here is"
+            echo "that the process does not die."
+          fi
+
+          # On Linux, wait for the storage to appear before closing. This is not a
+          # theoretical precaution: on the Actions runner the webview takes about 28 seconds
+          # to write for the first time, against less than one on a development machine. The
+          # first attempt closed the application at 10s and reported "the webview did not
+          # start" when what was missing was waiting.
+          #
+          # The margin is generous on purpose: at 20s the run passed by two seconds, and a
+          # more loaded runner would have gone red again with a healthy application.
+          STORE="$HOME/.local/share/com.daylo.app/localstorage"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            for s in $(seq 1 45); do
+              # With 'nullglob', a glob with no matches DISAPPEARS, so an
+              # 'ls "$STORE"/*localstorage*' would run with no arguments, list the current
+              # directory and return success: an immediate false positive. The expansion has
+              # to be counted, not handed to ls.
+              expected=( "$STORE"/*localstorage* )
+              if [ ${#expected[@]} -gt 0 ]; then
+                echo "Storage appeared ~$((10 + s))s after startup"
+                break
+              fi
+              sleep 1
+            done
+          fi
+
+          # Clean shutdown BEFORE looking at the storage. WebKit keeps localStorage in WAL
+          # mode and the checkpoint happens on close: reading without waiting for the
+          # process to end can find the state still only in the -wal.
+          kill -TERM "$APP_PID" 2>/dev/null || true
+          # Without a timeout, an app that ignores SIGTERM would leave 'wait' blocked and
+          # the job hanging until Actions' own limit.
+          for _ in $(seq 1 15); do
+            kill -0 "$APP_PID" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "::warning::The application did not answer SIGTERM within 15s; forcing it."
+            echo "::warning::localStorage may not have checkpointed."
+            kill -KILL "$APP_PID" 2>/dev/null || true
+          fi
+          # 'wait' returns 143 when the process ends through SIGTERM, and the Actions shell
+          # runs with -e ('bash -e {0}'), which 'set -uo pipefail' does not disable: without
+          # the '|| true' the step would ALWAYS abort, with a perfectly healthy application,
+          # on Linux and on macOS.
+          wait "$APP_PID" 2>/dev/null || true
+          APP_PID=""
+
+          # Extra check on Linux only, which is the verified path. On macOS the webview's
+          # storage lives somewhere else and in another format, and doing this blindly would
+          # give false negatives that block pull requests.
+          if [ "$RUNNER_OS" != "Linux" ]; then
+            exit 0
+          fi
+          STORE="$HOME/.local/share/com.daylo.app/localstorage"
+          # The glob includes -wal and -shm on purpose: even though the shutdown is clean
+          # now, reading only the base file would depend on the checkpoint having happened.
+          files=( "$STORE"/*localstorage* )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::The process started but created no storage at:"
+            echo "::error::  $STORE"
+            echo "::error::The webview never loaded the application."
+            echo "--- what is under the data directory ---"
+            find "$HOME/.local/share/com.daylo.app" 2>/dev/null | head -20 || true
+            echo "--- full application output ---"
+            cat smoke.log 2>/dev/null || true
+            echo "--- WebKitGTK sandbox ---"
+            # Since WebKit 2.26 the WebProcess is launched through bwrap. If the environment
+            # does not allow unprivileged user namespaces, that process does not start and
+            # the main one stays alive with an empty window: the exact symptom of this
+            # failure. On the Actions runner this was already ruled out (bwrap present and
+            # namespaces allowed), but it is still dumped because in another environment it
+            # could be precisely the cause.
+            command -v bwrap >/dev/null 2>&1 && echo "bwrap: $(command -v bwrap)" \
+              || echo "bwrap: not installed"
+            for f in /proc/sys/kernel/unprivileged_userns_clone \
+                     /proc/sys/user/max_user_namespaces; do
+              [ -r "$f" ] && echo "$f = $(cat "$f" 2>/dev/null)" || echo "$f: not readable"
+            done
+            echo "--- is the WebProcess executable where WebKit looks for it? ---"
+            # The WebProcess is a separate binary, not a library: if the runtime package
+            # does not ship it, the main process starts anyway and sits there with an empty
+            # window, saying nothing on stderr.
+            ls -la /usr/lib/*/webkit2gtk-4.1/ 2>/dev/null | head -10 || \
+              echo "no webkit2gtk-4.1 directory exists under /usr/lib"
+            echo "--- webkit version and sandbox utilities ---"
+            # The version matters: WEBKIT_DISABLE_DMABUF_RENDERER only exists from WebKit
+            # 2.42, so on an older image the variables above do nothing and the WebProcess
+            # would still die creating buffers. And the sandbox needs xdg-dbus-proxy as well
+            # as bwrap: it is a declared dependency of libwebkit2gtk-4.1-0, but it is worth
+            # seeing rather than assuming.
+            dpkg -l 2>/dev/null | grep -iE 'webkit|bubblewrap|xdg-dbus-proxy' \
+              | awk '{print $2, $3}' || true
+            command -v xdg-dbus-proxy >/dev/null 2>&1 \
+              && echo "xdg-dbus-proxy: $(command -v xdg-dbus-proxy)" \
+              || echo "xdg-dbus-proxy: MISSING (the WebKit sandbox needs it)"
+            echo "runner image: ${ImageOS:-unknown} ${ImageVersion:-}"
+            echo "XDG_RUNTIME_DIR in use: ${XDG_RUNTIME_DIR:-<unset>}"
+            echo "DBUS_SESSION_BUS_ADDRESS in use: ${DBUS_SESSION_BUS_ADDRESS:-<unset>}"
+            exit 1
+          fi
+          # WebKit stores the value as UTF-16LE, hence 'strings -e l'. The shape of the
+          # state is checked and not only that the file exists: a storage that was created
+          # and left empty would mean the webview started and the application did not
+          # initialise.
+          #
+          # The output is captured first rather than piping 'strings | grep': the -wal and
+          # -shm files disappear when WebKit checkpoints on close, so between the glob
+          # expanding and the read they can stop existing. 'strings' then returns a non
+          # zero code and, with 'pipefail', that would take down the whole pipeline,
+          # declaring empty a storage that does hold the state.
+          content=$(strings -e l "${files[@]}" 2>/dev/null || true)
+          # Matched with bash rather than piped into 'grep -q', for the same reason as the
+          # APK listing in the Android job: under 'pipefail' the writer gets SIGPIPE when
+          # grep short circuits, and whether that happens depends on the output fitting in
+          # the pipe buffer. This output is small today, so it passes; it would start
+          # failing on a healthy app the day somebody's store grows past 64 KB.
+          if [[ "$content" == *'"activities"'* ]]; then
+            echo "The store initialised and persisted its state:"
+            grep -o '"selectedYear":[0-9]*' <<< "$content" | head -1 || true
+          else
+            echo "::error::The storage exists but holds no store state:"
+            echo "::error::the webview started and the application never initialised."
+            ls -la "$STORE"
+            exit 1
+          fi
+
+      - name: Smoke run the binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # The binary is about to be started with an empty profile, which since 1.3 is a
+        # new installation: it would turn the check-in on and send one, and the server
+        # would count a runner as a person. Seven arrived in one evening before anybody
+        # noticed. With this set the app behaves as it does on the web: no check-in at
+        # all. See src-tauri/src/checkin.rs.
+        env:
+          DAYLO_DISABLE_CHECKIN: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rel = 'src-tauri/target/debug/Daylo.exe'
+          if (-not (Test-Path $rel)) {
+            Write-Output "::error::No binary found at $rel"
+            Get-ChildItem src-tauri/target/debug | Select-Object -First 20 | Format-Table Name
+            exit 1
+          }
+          # Absolute paths: -FilePath and -RedirectStandard* resolve against
+          # [Environment]::CurrentDirectory, which does not follow $PWD.
+          $bin = (Resolve-Path $rel).Path
+          $out = Join-Path $PWD 'smoke-out.log'
+          $err = Join-Path $PWD 'smoke-err.log'
+
+          $p = Start-Process -FilePath $bin -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+          try {
+            # Sleep then check, so the last second is not left unwatched.
+            for ($i = 1; $i -le 10; $i++) {
+              Start-Sleep -Seconds 1
+              if ($p.HasExited) {
+                Write-Output "::error::The binary died after ~${i}s with code $($p.ExitCode)"
+                if (Test-Path $err) { Get-Content $err }
+                exit 1
+              }
+            }
+            Write-Output "The main process is still alive after 10s"
+
+            # "Alive" is not "started": with no interactive desktop, if WebView2 fails and
+            # Tauri opens a modal dialog, the process stays up with the app broken.
+            #
+            # Waited for, not sampled once. Until 2026-09-25 this looked exactly once, at
+            # t=10s, and that day it failed on a pull request that changed two lines of
+            # YAML while the same code had passed on main fourteen hours earlier. The
+            # re-run passed with one child, so the process tree is the shape this expects
+            # and what ran out was time. A single sample cannot tell "not yet" from
+            # "never", which is precisely what whoever reads the failure needs to know.
+            #
+            # Filtered by ParentProcessId rather than looking for msedgewebview2 across the
+            # whole machine: a runner with any other WebView2 process open would give a
+            # false positive.
+            # Filtered by NAME, not only by parent: 'tauri build --debug' does not apply
+            # windows_subsystem = "windows" (main.rs uses cfg_attr(not(debug_assertions))),
+            # so the .exe is a console one and Start-Process without -NoNewWindow gives it a
+            # child conhost.exe. Counting children plainly would give >=1 even if WebView2
+            # never starts: green with a broken application.
+            # Looked at once straight away and then slept before each further look, which
+            # is the convention of the loop above and for its reason: with look-then-sleep
+            # the last second passes unwatched, and the message at the end would claim a
+            # second of waiting that never happened. Here the first look is at t=10, the
+            # last at t=60, and $waited is the truth in both.
+            $waited = 0
+            $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.Id)" -ErrorAction SilentlyContinue |
+                          Where-Object { $_.Name -eq 'msedgewebview2.exe' })
+            while ($children.Count -eq 0 -and $waited -lt 50) {
+              Start-Sleep -Seconds 1
+              $waited = $waited + 1
+              if ($p.HasExited) {
+                Write-Output "::error::The binary died after $(10 + $waited)s, while the webview was being awaited, with code $($p.ExitCode)."
+                if (Test-Path $err) { Get-Content $err }
+                exit 1
+              }
+              $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.Id)" -ErrorAction SilentlyContinue |
+                            Where-Object { $_.Name -eq 'msedgewebview2.exe' })
+            }
+
+            if ($children.Count -eq 0) {
+              Write-Output "::error::The main process is alive but launched no msedgewebview2 process in $(10 + $waited)s: it did not start and the window would be empty."
+              # Everything the next reader would otherwise have to guess at. The first two
+              # say whether the webview started somewhere else in the tree, which is what a
+              # change in how WebView2 is spawned would look like and what this filter
+              # would then be wrong about; the third says whether the runtime is installed
+              # at all, read where src-tauri/src/webview2.rs reads it.
+              Write-Output "Processes whose parent is the app:"
+              Get-CimInstance Win32_Process -Filter "ParentProcessId = $($p.Id)" -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Output "  - $($_.ProcessId) $($_.Name)" }
+              Write-Output "Every msedgewebview2 on the machine, with its parent:"
+              Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Output "  - $($_.ProcessId) parent $($_.ParentProcessId)" }
+              Write-Output "WebView2 runtime, where the app looks for it:"
+              foreach ($key in @(
+                'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+                'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+                'HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}')) {
+                $pv = (Get-ItemProperty -Path $key -Name pv -ErrorAction SilentlyContinue).pv
+                if ($pv) { Write-Output "  - $key -> $pv" } else { Write-Output "  - $key -> absent" }
+              }
+              Write-Output "Standard output:"
+              if (Test-Path $out) { Get-Content $out }
+              Write-Output "Standard error:"
+              if (Test-Path $err) { Get-Content $err }
+              exit 1
+            }
+            # The time is printed on success too, so the next person arguing about this
+            # number has the distribution instead of one data point from the day it broke.
+            Write-Output "The webview started after $(10 + $waited)s: $($children.Count) child processes of the binary"
+            $children | ForEach-Object { Write-Output "  - $($_.ProcessId) $($_.Name)" }
+          }
+          finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+          }
