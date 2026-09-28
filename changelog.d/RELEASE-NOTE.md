@@ -1,1 +1,1 @@
-This is the second lab version. Anything that updates itself to this from 1.4.0 has proved the path works.
+The third lab version, signed with the wrong key on purpose. Anything that offers this and then refuses it is behaving exactly as it should.
