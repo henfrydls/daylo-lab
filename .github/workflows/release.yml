@@ -409,7 +409,12 @@ jobs:
     steps:
       - name: Check build results
         run: |
-          if [ "${{ needs.build.result }}" == "success" ] && [ "${{ needs.build-android.result }}" == "success" ]; then
+          # "skipped" counts here, and only here, because this repository turns the
+          # Android job off on purpose. In henfrydls/daylo that job runs and a skip would
+          # mean something went wrong, so this line is the one difference in this file.
+          if [ "${{ needs.build.result }}" == "success" ] && \
+             [ "${{ needs.build-android.result }}" == "success" -o \
+               "${{ needs.build-android.result }}" == "skipped" ]; then
             echo "All builds completed successfully!"
             echo "Release artifacts have been uploaded to: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           else
