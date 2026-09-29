@@ -82,7 +82,26 @@ jobs:
         run: |
           $exe = (Get-ChildItem to -Filter *.exe)[0].FullName
           Write-Host "running: $exe /P /R /UPDATE /ARGS"
-          Start-Process -FilePath $exe -ArgumentList '/P', '/R', '/UPDATE', '/ARGS' -Wait
+
+          # Not -Wait, and the application is closed straight afterwards, because that is
+          # the order the plugin uses: ShellExecuteW returns as soon as the installer is
+          # launched and the next line is std::process::exit(0). The first attempt at this
+          # job waited on the installer with the app still running, and the installer sat
+          # there for the whole twenty minutes: it has an application to replace and that
+          # application was not going anywhere.
+          $installer = Start-Process -FilePath $exe -ArgumentList '/P', '/R', '/UPDATE', '/ARGS' -PassThru
+          Get-Process Daylo -ErrorAction SilentlyContinue | Stop-Process -Force
+          Write-Host "installer pid $($installer.Id); the application has exited, as it does"
+
+          if (-not $installer.WaitForExit(180000)) {
+            Write-Host "::error::The installer was still running three minutes later."
+            Write-Host "::error::In Passive mode it draws a progress window, so this can also"
+            Write-Host "::error::mean this runner cannot finish an installation that has one,"
+            Write-Host "::error::rather than anything being wrong with the installer."
+            Get-Process | Where-Object { $_.Name -like '*Daylo*' } | Format-Table Id, Name, Path
+            exit 1
+          }
+          Write-Host "the installer exited after $([int]((Get-Date) - $installer.StartTime).TotalSeconds)s"
           Start-Sleep -Seconds 20
 
       - name: The three questions
