@@ -1,0 +1,127 @@
+name: Does the Windows installer leave the app open?
+
+# The one thing nobody has watched. On Windows the app never runs its own relaunch: the
+# installer closes it, installs, and starts it again. That is the NSIS template reading
+# "/R", passed by the plugin, and the sentence on the card ("Daylo will close and open
+# again"), in the README and in the privacy policy all depend on it.
+#
+# There is no Windows machine in this team to try it on, so this is the substitute: a
+# runner, the two published lab installers, and the exact arguments the plugin uses. It
+# proves nothing about the interface, which is deliberate. It answers one question: does
+# that installer leave the application running on the new version.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: The version already installed
+        default: v1.4.0
+      to:
+        description: The version the installer carries
+        default: v1.4.1
+
+jobs:
+  windows-update-path:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Take both installers from the releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ inputs.from }}" --repo "${{ github.repository }}" --pattern "Daylo_*_x64-setup.exe" --dir from
+          gh release download "${{ inputs.to }}"   --repo "${{ github.repository }}" --pattern "Daylo_*_x64-setup.exe" --dir to
+          Get-ChildItem from, to | ForEach-Object { "$($_.Directory.Name)/$($_.Name)  $($_.Length) bytes" }
+
+      # Silent, because this step is the setting up and not the thing being measured. The
+      # installer is currentUser, so nothing asks for an administrator.
+      - name: Install the older one
+        run: |
+          $exe = (Get-ChildItem from -Filter *.exe)[0].FullName
+          Start-Process -FilePath $exe -ArgumentList '/S' -Wait
+
+          # Found rather than assumed: the install directory belongs to the NSIS template
+          # and to the install mode, and a job that hard-codes it would go red one day for
+          # a reason that has nothing to do with the question it asks.
+          $app = Get-ChildItem "$env:LOCALAPPDATA" -Filter Daylo.exe -Recurse -ErrorAction SilentlyContinue |
+                 Select-Object -First 1 -ExpandProperty FullName
+          if (-not $app) {
+            Write-Host "::error::Nothing named Daylo.exe appeared anywhere under $env:LOCALAPPDATA"
+            Write-Host "--- what the installer did leave there ---"
+            Get-ChildItem "$env:LOCALAPPDATA" -Directory | Select-Object -ExpandProperty Name
+            exit 1
+          }
+          $v = (Get-Item $app).VersionInfo.FileVersion
+          Write-Host "installed $v at $app"
+          "APP=$app"  | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BEFORE=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # It has to be running, because what is being measured is an installer closing a
+      # running application and opening it again. Starting it is also the first thing that
+      # would tell us the runner cannot run it at all.
+      - name: Open it
+        run: |
+          Start-Process -FilePath $env:APP
+          Start-Sleep -Seconds 25
+          $p = Get-Process Daylo -ErrorAction SilentlyContinue
+          if (-not $p) {
+            Write-Host "::error::The application did not stay open on this runner, so the"
+            Write-Host "::error::question this job asks cannot be answered here."
+            exit 1
+          }
+          Write-Host "running as pid $($p.Id)"
+
+      # The arguments are the plugin's, copied from tauri-plugin-updater 2.10.1:
+      #   install_mode.nsis_args() + /UPDATE + /ARGS + the running app's own arguments
+      # The install mode is the default, Passive, whose nsis_args() is ["/P", "/R"]: a
+      # progress bar, and restart the app afterwards. The app was launched with no
+      # arguments of its own, so nothing follows /ARGS. The plugin runs this through
+      # ShellExecuteW with "open" and then exits; Start-Process -Wait is the same call
+      # without the exit.
+      - name: Run the newer installer the way the app would
+        run: |
+          $exe = (Get-ChildItem to -Filter *.exe)[0].FullName
+          Write-Host "running: $exe /P /R /UPDATE /ARGS"
+          Start-Process -FilePath $exe -ArgumentList '/P', '/R', '/UPDATE', '/ARGS' -Wait
+          Start-Sleep -Seconds 20
+
+      - name: The three questions
+        run: |
+          $app = $env:APP
+          $ok = $true
+
+          $v = (Get-Item $app).VersionInfo.FileVersion
+          $want = "${{ inputs.to }}".TrimStart('v')
+          if ($v -like "$want*") {
+            Write-Host "version on disk: $v (was $env:BEFORE)"
+          } else {
+            Write-Host "::error::The installed file says $v and the installer carried $want."
+            $ok = $false
+          }
+
+          $p = Get-Process Daylo -ErrorAction SilentlyContinue
+          if ($p) {
+            Write-Host "still running, pid $($p.Id)"
+          } else {
+            Write-Host "::error::No Daylo process is running after the install. The installer"
+            Write-Host "::error::did not leave the application open, which is what the card,"
+            Write-Host "::error::the README and the privacy policy all say it does."
+            $ok = $false
+          }
+
+          if ($p) {
+            $path = $p.Path
+            if ($path -eq $app) {
+              Write-Host "and it is the installed copy: $path"
+            } else {
+              Write-Host "::error::The running process is $path and the installation is $app."
+              $ok = $false
+            }
+          }
+
+          if (-not $ok) { exit 1 }
+          Write-Host "The installer left the application open, on the new version."
+
+      - name: Close it
+        if: always()
+        run: Get-Process Daylo -ErrorAction SilentlyContinue | Stop-Process -Force
