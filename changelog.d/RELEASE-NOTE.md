@@ -1,1 +1,1 @@
-Daylo Lab 1.4.5, which exists to find out whether one job making the release stops five jobs racing to make it.
+Daylo Lab 1.4.6: the sliding between the views lands more gently, and the ends of the line give fewer pixels before they stop.

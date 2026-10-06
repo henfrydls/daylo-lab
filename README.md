@@ -9,14 +9,14 @@ sequence of events that Daylo 1.4.0 will put in front of somebody in a few days.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `f91d6ed`, which is everything in 1.4.1 including
-the three things the last round of this repository found. Nothing here is written by hand
-except the differences below.
+Built from `henfrydls/daylo` at commit `18c58e9`. Nothing here is written by hand except
+the differences below, and this tree is not edited in place: every round it is thrown away
+and built again from that commit, with those differences applied on top.
 
-This line said v1.4.0 for two refreshes after it stopped being true: the edit that should
-have moved it sat in a script that failed on a later line and wrote nothing. If you are
-reading it to know what you are testing, check it against the version in `package.json`,
-which is the one thing here that cannot drift.
+That commit is now written by the refresh and not typed, which is the only reason to trust
+it. It said v1.4.0 for two refreshes after it had stopped being true, and the same round of
+hand editing quietly dropped a comment out of `release.yml`, so this file was claiming a
+difference of one place where there were two.
 
 ## What is different, and why each one
 
@@ -30,10 +30,11 @@ which is the one thing here that cannot drift.
 | the Android build signs with a key made for that build                  | the real signing key is not in this repository and must not be. Nothing on Android updates over anything, because there is no updater there, so there is nothing for a stable key to protect. The cost: two lab APKs cannot be installed over each other                                                                                        |
 | four workflows are gone (Flatpak, MSIX, the MSIX probe, the test build) | none of them is part of the update path, and each one costs runner minutes on a private repository                                                                                                                                                                                                                                              |
 
-`ci.yml` differs only in the identifier its smoke check looks for. `release.yml` differs in
-one place, marked in the file: the keystore it signs Android with. Everything else in both,
-and every script they call, is what `main` has. That is the whole idea: if the manifest
-composer refuses something here, it will refuse the same thing there.
+`ci.yml` and `.github/scripts/android-smoke.sh` differ only in the identifier their smoke
+checks look for. `release.yml` differs in one place, marked in the file: the keystore it
+signs Android with. Everything else in both, and every other script they call, is what
+`main` has. That is the whole idea: if the manifest composer refuses something here, it
+will refuse the same thing there.
 
 ## What a release here proves
 
@@ -52,69 +53,53 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-Everything you found last time is in this build. The list below is what to look at, and it
-is short on purpose: four of the five are things you already know are wrong, so the
-question is only whether they are right now.
+Two numbers about the sliding changed since the build you tried, and nothing else moved.
+Both are things only a hand can judge, so this round is two questions and no checklist.
 
-**Write down anything that does not match, in the words you would use to tell somebody what
-you saw.** A step that goes differently is worth more than a step that goes as written.
-
-Install `Daylo-android-arm64.apk` from the **v1.4.4** release of this repository. **If you
-still have the 1.4.2 on the phone, uninstall it first**: lab builds are signed with a key
+Install `Daylo-android-arm64.apk` from the **v1.4.6** release of this repository.
+**Uninstall whichever Daylo Lab is on the phone first**: lab builds are signed with a key
 made for that build, so one cannot be installed over another. It installs beside your real
 Daylo and touches nothing of it.
 
-## The five things
+**Write down anything that does not match, in the words you would use to tell somebody what
+you saw.**
 
-**1. Letting go of a slide.** Drag between Year and Month and let go. The view should be
-put down rather than snapped into place. It was 140 to 260 ms and it is 280 to 400 now,
-and going back is 260. This is the one that only a hand can judge: if it is still fast, or
-now slow, say which.
+## The two things
 
-**2. The toggle against the drag.** Tap **Year | Month** and then do the same journey by
-dragging. The toggle takes 240 ms, which is now **quicker** than letting go of a drag. That
-is the opposite of how the design had it, and it was left alone on purpose so that you
-could feel the other two first. Does the tap feel right beside the drag, or should it slow
-down to match?
+**1. The ends of the line give less.** In Year, drag right; in Month, drag left. There is
+nothing on the other side either way, so the view gives a little and stops. It gave 64
+pixels and gives 24 now. The question is whether it still says "there is nothing here"
+without showing you a white gap wide enough to look at.
 
-**3. The day sheet with nothing in it.** Open a day before creating any activity. There
-should be one button, Create your first activity, and the cross in the corner. **Done is
-gone** from that state; it used to sit there doing nothing.
+**2. Letting go lands instead of arriving.** Drag between Year and Month, past the point of
+no return, and let go. The last part of the movement takes a little longer than it did, 320
+to 450 ms rather than 280 to 400, and it eases into place on a different curve. Does it
+land, or does it dawdle?
 
-**4. A short view fills the screen.** Go to Year and choose **By activity** with no
-activities, or any view that ends early. The white card should reach the bottom of the
-screen instead of stopping under its text and leaving grey. Then **drag sideways starting
-low down, where the grey used to be**: it should cross to the other view. That whole area
-did nothing before.
+Going back from a drag that did not go far enough is still 260 ms, and the toggle is still
+240, both untouched on purpose: if one of the three now feels out of step with the other
+two, say which one. That is the question left over from the last round.
 
-While you are there: the floating button at the bottom right should still be on top of the
-card and not cut off, and a long view, a year with months in it, should still scroll
-normally.
+## Closed since last round
 
-**5. The one nobody has tested yet.** In **Month**, start a drag to the right **within a
-thumb's width of the left edge of the screen**, where Android's own back gesture lives.
-Whatever happens, write down which one won: the app, the system, or neither.
-
-## The back button, again in one line
-
-It was right last time and nothing here touched it, so it is only worth a moment: open a
-dialog, press back, the dialog goes and Daylo stays. From the main screen with nothing
-open, back still closes Daylo.
+The left edge is settled: on your phone, with gesture navigation, the app wins the drag and
+Android's back gesture does not. Worth saying out loud that this was measured on one
+phone with one navigation setting, so it is an answer about that phone and not a law.
 
 # Publishing a lab release
 
-Two tags, in this order. Each one is a full release: five platforms, their signatures, and
-one `latest.json` composed from them.
+One tag per round, and each one is a full release: five platforms, their signatures, and
+one `latest.json` composed from them. The round before it is the version that gets offered
+this one, which is the thing being tested, so there is always a previous release to update
+from.
 
-    git tag v1.4.0 && git push origin v1.4.0
+The tree is not edited here. It is rebuilt from Daylo's `main` with the lab differences
+applied on top, by the scripts kept outside this repository, and then:
 
-Then, once that run is finished:
-
-    npm version patch --no-git-tag-version
-    # changelog.d/RELEASE-NOTE.md has to say something different from the previous release:
-    # the manifest job refuses a note that is word for word the one before it.
-    git commit -am "Daylo Lab 1.4.1: the version there is to update to"
-    git tag v1.4.1 && git push origin main v1.4.1
+    git add -A && git commit -m "Daylo Lab 1.4.6: ..."
+    git push origin main
+    # once the push has gone green:
+    git tag v1.4.6 && git push origin v1.4.6
 
 ## What to look at in each run
 

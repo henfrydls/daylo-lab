@@ -167,6 +167,9 @@ jobs:
     # Tags only: a manual dispatch must not publish a release, because the name comes
     # from github.ref_name and from a branch it would create a release named after it.
     if: startsWith(github.ref, 'refs/tags/')
+    # It uploads into the release too, so it waits for the one job that makes it. In
+    # practice it spends minutes building before it uploads anything, but "in practice"
+    # is what the race above was made of.
     needs: create-release
     permissions:
       contents: write
