@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `7244a1a`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `5b6542d`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -55,10 +55,9 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-You broke the last one in fourteen seconds, and this is the build where that should not
-happen. Two things to try, and the first one is the one that matters.
+One thing changed, and it is the one you said: letting go.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.7** release of this repository.
+Install `Daylo-android-arm64.apk` from the **v1.4.8** release of this repository.
 **Uninstall whichever Daylo Lab is on the phone first**: lab builds are signed with a key
 made for that build, so one cannot be installed over another. It installs beside your real
 Daylo and touches nothing of it.
@@ -66,38 +65,31 @@ Daylo and touches nothing of it.
 **Write down anything that does not match, in the words you would use to tell somebody what
 you saw.**
 
-## The two things
+## The one thing
 
-**1. Do it fast again.** Slide between Year and Month, and start the next slide straight
-away, without waiting for the first to come to rest. Several times, back and forth, as
-quickly as you can. Two things to watch while you do it:
+**Let go while your hand is still moving.** Slide between Year and Month at a fair pace and
+take your finger off without slowing down first. The view should carry on at the speed your
+hand had and then be put down, with nothing in between.
 
-- the toggle at the top and the view underneath it have to say the same thing, always;
-- there must be no white where the other view is coming in from.
+What you said last time was that letting go fast made it go slower at once, and you were
+exactly right: it was filmed and read frame by frame, and the first frame after your finger
+left moved four pixels where your finger had been moving sixty. The view stopped dead for a
+frame and set off again. The curve it was following started from a standstill by
+construction, whatever your hand had been doing.
 
-Both of those were wrong last time, for about a third of a second each. They were the same
-fault: letting go starts a landing that takes up to 450 ms, and a second slide inside that
-window was reading a view that had not changed yet, while the landing arrived in the middle
-of it and hid the panel your finger was pulling. A finger coming down now ends whatever is
-still landing, before anything else happens. The cost is that the first one can snap the
-last few pixels into place as you touch the screen: if that is what reads badly now, say so.
+Now the curve is drawn for the gesture you just made.
 
-**2. The ends of the line, again.** In Year drag right, in Month drag left. It is not that
-there is more give than last time, it is that **it no longer stops**: it used to go 24
-pixels and then stand still while your finger kept going, which is what read as a jump. Now
-it gives less and less the further you push and never quite stops. Push a long way, well
-past where it used to freeze, and say whether it still feels like a wall or like something
-sagging.
+**Then let go of a slow one.** Drag across without hurrying, and stop your hand before
+lifting it. That one should be unchanged from the last build: gentle, put down rather than
+thrown. If it feels different, that is worth knowing, because it is not supposed to be.
 
-## Settled, and not in this build
+The two together are the whole question: a fast release should feel continuous, and a slow
+one should feel exactly as it did.
 
-The back button closes Daylo from both views. That is what it does now and what it will
-keep doing.
+## Nothing else moved
 
-The left edge was measured in the 1.4.6 round: starting a drag where Android's own back
-gesture lives, the app wins and the system does not. On that phone, with gesture
-navigation. It is an answer about that phone and not a law, which is worth remembering the
-first time somebody with a different one says otherwise.
+The ends of the line, going back from a drag that did not go far enough, the toggle, and
+how long a landing takes are all untouched. The back button closes Daylo from both views.
 
 # Publishing a lab release
 

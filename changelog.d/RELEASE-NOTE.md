@@ -1,1 +1,1 @@
-Daylo Lab 1.4.7: a second slide no longer runs into the first one landing, and the ends of the line never stop giving.
+Daylo Lab 1.4.8: letting go while your hand is still moving no longer stops the view dead for a frame before it sets off again.
