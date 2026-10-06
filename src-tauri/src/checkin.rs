@@ -26,6 +26,8 @@ const WEBSITE: &str = "b382ce66-26f7-4bc7-9a0a-34d4c5e730f2";
 pub struct CheckinFields {
     version: String,
     os: &'static str,
+    /// One word for the way this copy was installed. See `packaging::installed_from`.
+    source: &'static str,
 }
 
 /// The switch that turns the check-in off for a whole build, read from the environment.
@@ -67,6 +69,7 @@ fn fields<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<CheckinFields,
     Ok(CheckinFields {
         version: app.package_info().version.to_string(),
         os: std::env::consts::OS,
+        source: crate::packaging::checkin_source(),
     })
 }
 
@@ -83,14 +86,26 @@ pub fn checkin_fields<R: tauri::Runtime>(
 }
 
 /// The message, and nothing but the message. `last` is added only when the switch is being
-/// turned off. Separate from the sending so that "exactly these four keys" is something a
+/// turned off. Separate from the sending so that "exactly these five keys" is something a
 /// test asserts rather than something a comment claims.
-pub fn message(id: &str, version: &str, os: &str, date: &str, last: bool) -> serde_json::Value {
-    let mut data = serde_json::json!({ "id": id, "version": version, "os": os, "date": date });
+///
+/// `source` is one word for the way this copy was installed, and it is here because the
+/// panel could count twenty copies on Windows without knowing how many came from the Store.
+/// It says nothing about the person: two people who both installed the same file send the
+/// same word.
+pub fn message(
+    id: &str,
+    version: &str,
+    os: &str,
+    source: &str,
+    date: &str,
+    last: bool,
+) -> serde_json::Value {
+    let mut data = serde_json::json!({ "id": id, "version": version, "os": os, "source": source, "date": date });
     if last {
         data["last"] = serde_json::Value::Bool(true);
     }
-    envelope("check-in", data)
+    envelope("check-in", data, Some(id))
 }
 
 /// Send one check-in. A failure is reported to the caller and forgotten: no queue, no
@@ -107,8 +122,12 @@ pub async fn send_checkin<R: tauri::Runtime>(
     // Through the same gate as the screen, and before anything opens a socket: a webview
     // that was already open, or a caller that skips the screen entirely, gets the same
     // refusal. It also happens to be where the version comes from.
-    let CheckinFields { version, os } = fields(&app)?;
-    let body = message(&id, &version, os, &date, last);
+    let CheckinFields {
+        version,
+        os,
+        source,
+    } = fields(&app)?;
+    let body = message(&id, &version, os, source, &date, last);
     tauri::async_runtime::spawn_blocking(move || post(body))
         .await
         .map_err(|error| error.to_string())?
@@ -116,17 +135,31 @@ pub async fn send_checkin<R: tauri::Runtime>(
 
 /// The envelope every message in this file travels in. Only the name and the data differ,
 /// so they are the only two things this takes.
-fn envelope(name: &str, data: serde_json::Value) -> serde_json::Value {
-    serde_json::json!({
-        "type": "event",
-        "payload": {
-            "website": WEBSITE,
-            "hostname": "app",
-            "url": "/",
-            "name": name,
-            "data": data
-        }
-    })
+fn envelope(name: &str, data: serde_json::Value, distinct: Option<&str>) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "website": WEBSITE,
+        "hostname": "app",
+        "url": "/",
+        "name": name,
+        "data": data
+    });
+
+    // The same random number that is already inside `data`, in the one field the panel
+    // reads as "who sent this". Nothing new leaves the machine: it is one number written
+    // twice, in two places that are read by different parts of the same panel.
+    //
+    // It is here because without it the panel grouped every message ever sent into two
+    // sessions, so "how many devices" and "how many came back" were questions it could
+    // not answer. Which is the whole reason the check-in exists.
+    //
+    // None when there is nothing to put there, which is an answer from somebody with the
+    // check-in off. They have no number, and inventing one for the panel's convenience
+    // would be exactly what the rule in `with_ids` forbids.
+    if let Some(id) = distinct {
+        payload["id"] = serde_json::Value::String(id.into());
+    }
+
+    serde_json::json!({ "type": "event", "payload": payload })
 }
 
 /// Two numbers ride with an answer, and they are not the same number, which is the part
@@ -170,21 +203,21 @@ fn with_ids(answer: &str, id: Option<&str>) -> serde_json::Map<String, serde_jso
 pub fn shown(answer: &str, id: Option<&str>, origin: &str) -> serde_json::Value {
     let mut data = with_ids(answer, id);
     data.insert("origin".into(), serde_json::Value::String(origin.into()));
-    envelope("feedback-shown", serde_json::Value::Object(data))
+    envelope("feedback-shown", serde_json::Value::Object(data), id)
 }
 
 /// The star, sent the moment it is pressed rather than when a form is completed.
 pub fn rating(answer: &str, id: Option<&str>, stars: u8) -> serde_json::Value {
     let mut data = with_ids(answer, id);
     data.insert("stars".into(), serde_json::Value::Number(stars.into()));
-    envelope("feedback-rating", serde_json::Value::Object(data))
+    envelope("feedback-rating", serde_json::Value::Object(data), id)
 }
 
 /// What somebody wrote, and the only message Daylo sends that carries anything typed.
 pub fn comment(answer: &str, id: Option<&str>, text: &str) -> serde_json::Value {
     let mut data = with_ids(answer, id);
     data.insert("text".into(), serde_json::Value::String(text.into()));
-    envelope("feedback-comment", serde_json::Value::Object(data))
+    envelope("feedback-comment", serde_json::Value::Object(data), id)
 }
 
 /// Send one answer, through the same gate and the same socket as the check-in.
@@ -258,15 +291,24 @@ fn post(_body: serde_json::Value) -> Result<(), String> {
 mod tests {
     use super::{message, WEBSITE};
 
-    /// The promise the privacy policy makes, as an assertion. Four keys, and a fifth only
+    /// The promise the privacy policy makes, as an assertion. Five keys, and a sixth only
     /// when the switch is being turned off — which the dialog announces before anyone can
     /// turn anything on.
+    ///
+    /// It was four until 1.4.1 added how the copy was installed. The list is written out
+    /// rather than counted, so adding a field is a decision somebody makes here and then
+    /// goes and writes into the policy, instead of something that slips out with a build.
+    ///
+    /// The number also travels outside `data`, in the envelope, where the panel reads it as
+    /// "who sent this". That is the same number written twice and not a sixth thing, and
+    /// `the_envelope_carries_the_number_and_nothing_else` is where it is pinned.
     #[test]
-    fn carries_four_things_and_a_fifth_only_at_the_end() {
+    fn carries_five_things_and_a_sixth_only_at_the_end() {
         let ordinary = message(
             "4f9c2a7e1b60d3a8c5e2f1b74a9d0c6e",
             "1.3.0",
             "android",
+            "apk",
             "2026-09-14",
             false,
         );
@@ -274,19 +316,21 @@ mod tests {
 
         let mut keys: Vec<&str> = data.keys().map(String::as_str).collect();
         keys.sort_unstable();
-        assert_eq!(keys, ["date", "id", "os", "version"]);
+        assert_eq!(keys, ["date", "id", "os", "source", "version"]);
+        assert_eq!(data["source"], serde_json::json!("apk"));
 
         let farewell = message(
             "4f9c2a7e1b60d3a8c5e2f1b74a9d0c6e",
             "1.3.0",
             "android",
+            "apk",
             "2026-09-14",
             true,
         );
         let data = farewell["payload"]["data"].as_object().unwrap();
         let mut keys: Vec<&str> = data.keys().map(String::as_str).collect();
         keys.sort_unstable();
-        assert_eq!(keys, ["date", "id", "last", "os", "version"]);
+        assert_eq!(keys, ["date", "id", "last", "os", "source", "version"]);
         assert_eq!(farewell["payload"]["data"]["last"], serde_json::json!(true));
     }
 
@@ -426,17 +470,26 @@ mod tests {
     }
 
     /// Nothing about the person, the device or the habits rides along in the envelope
-    /// either. The values outside `data` are constants and are pinned as such.
+    /// either. The values outside `data` are constants, except for one: the random number,
+    /// which is there because the panel reads that field as "who sent this" and without it
+    /// every message ever sent fell into two sessions.
+    ///
+    /// It is the number that is already inside `data`, written twice, so nothing new
+    /// leaves the machine. The list is still spelled out, because a second field appearing
+    /// out here would be something nobody decided.
     #[test]
-    fn the_envelope_says_nothing_about_anyone() {
-        let m = message("id", "1.3.0", "linux", "2026-09-14", false);
+    fn the_envelope_carries_the_number_and_nothing_else() {
+        let m = message("the-number", "1.3.0", "linux", "deb", "2026-09-14", false);
 
         assert_eq!(m["type"], serde_json::json!("event"));
         assert_eq!(m["payload"]["hostname"], serde_json::json!("app"));
         assert_eq!(m["payload"]["url"], serde_json::json!("/"));
         assert_eq!(m["payload"]["name"], serde_json::json!("check-in"));
         assert_eq!(m["payload"]["website"], serde_json::json!(WEBSITE));
-        // The whole message, so a field added anywhere in it fails here.
+        // The same number in both places, which is what makes this one fact and not two.
+        assert_eq!(m["payload"]["id"], serde_json::json!("the-number"));
+        assert_eq!(m["payload"]["data"]["id"], m["payload"]["id"]);
+
         let mut top: Vec<&str> = m["payload"]
             .as_object()
             .unwrap()
@@ -444,6 +497,20 @@ mod tests {
             .map(String::as_str)
             .collect();
         top.sort_unstable();
-        assert_eq!(top, ["data", "hostname", "name", "url", "website"]);
+        assert_eq!(top, ["data", "hostname", "id", "name", "url", "website"]);
+    }
+
+    /// An answer from somebody with the check-in off has no number, and none is invented
+    /// for the panel's convenience. That is the same rule `with_ids` keeps inside `data`,
+    /// and it has to hold out here too or turning the check-in off would mean less than it
+    /// says.
+    #[test]
+    fn an_answer_without_a_number_carries_none() {
+        let m = super::rating("yes", None, 5);
+
+        assert!(m["payload"].as_object().unwrap().get("id").is_none());
+
+        let with = super::rating("yes", Some("the-number"), 5);
+        assert_eq!(with["payload"]["id"], serde_json::json!("the-number"));
     }
 }

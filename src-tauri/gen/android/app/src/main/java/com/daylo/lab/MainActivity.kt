@@ -1,4 +1,4 @@
-package com.daylo.app
+package com.daylo.lab
 
 import android.os.Bundle
 import android.graphics.Color

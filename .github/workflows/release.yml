@@ -142,7 +142,7 @@ jobs:
 
             **Linux.** The `.deb` installs with your package manager. The AppImage needs to be made executable first (right-click → Properties → allow executing, or `chmod +x`).
 
-            Your data stays on your device. Daylo has no account, and no server stores your habits or the days you marked. One thing leaves your device unless you turn it off: an anonymous daily check-in that tells us the app is still in use. It carries a random number, the app version, your system and the date, and nothing else. The app tells you the first time it opens, and you can turn it off from the menu at any time.
+            Your data stays on your device. Daylo has no account, and no server stores your habits or the days you marked. One thing leaves your device unless you turn it off: an anonymous daily check-in that tells us the app is still in use. It carries a random number, the app version, your system, how it was installed and the date, and nothing else. The app tells you the first time it opens, and you can turn it off from the menu at any time.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
@@ -150,15 +150,11 @@ jobs:
   build-android:
     # Tags only: a manual dispatch must not publish a release, because the name comes
     # from github.ref_name and from a branch it would create a release named after it.
-    # Off in the lab. Android has no updater at all: a phone updates from a store or from a
-    # new APK, so this job is outside the path the lab exists to run. It would also fail
-    # here for the right reason, because the signing keystore of the real app is not in
-    # this repository and must not be.
-    if: false && startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    name: Build (android-apk)
+    name: Build (android-apk-and-aab)
 
     steps:
       - name: Checkout repository
@@ -204,8 +200,11 @@ jobs:
       - name: Install Tauri CLI
         run: npm install --save-dev @tauri-apps/cli
 
-      - name: Build Android APK (arm64 only)
-        run: npx tauri android build --apk --target aarch64
+      # Both from one build. The APK is what the landing page links to and what anybody
+      # installs by hand; the AAB is the only format Play accepts, and it is built from the
+      # same sources in the same run so the two cannot be different software.
+      - name: Build Android APK and AAB (arm64 only)
+        run: npx tauri android build --apk --aab --target aarch64
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
 
@@ -220,28 +219,40 @@ jobs:
           APK_PATH="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
           ALIGNED_PATH="src-tauri/gen/android/app/build/outputs/apk/universal/release/Daylo-android-arm64.apk"
 
-          # The keystore HAS to come from secrets. It used to be generated here with
-          # 'keytool -genkey', which produced a new key on every build that existed only on
-          # that runner. Android requires an identical signature to update, so every APK
-          # published that way is unable to receive updates: the user has to uninstall, and
-          # for a local-first app that erases their data. We would rather the build fail
-          # than publish that again.
+          # THE ONE PLACE THIS REPOSITORY DIFFERS FROM henfrydls/daylo IN THIS FILE.
+          #
+          # There, the keystore has to come from secrets and a missing one fails the build,
+          # because a key that exists only on the runner means every published APK is
+          # signed differently and nobody can update over the last one: they have to
+          # uninstall, and for a local-first app that erases their data. That rule is right
+          # and it stays right.
+          #
+          # Here there is nothing to protect. Android has no updater at all, so no lab APK
+          # was ever going to be installed over another: whoever tries one installs it,
+          # looks, and uninstalls it. The real signing key is not in this repository and
+          # must not be, so rather than fail, this makes a key for this build alone.
+          #
+          # What it costs, said out loud so nobody is surprised: two lab APKs cannot be
+          # installed over each other. Uninstall the first.
           if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "::error::ANDROID_KEYSTORE_BASE64 is not in secrets. Aborting instead of"
-            echo "::error::generating an ephemeral key: an APK signed with a key different"
-            echo "::error::from the previous version's cannot be installed over it, and"
-            echo "::error::uninstalling erases the user's local data."
-            echo "::error::Set ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,"
-            echo "::error::ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD in the repo secrets."
-            exit 1
+            echo "::warning::No keystore in secrets. Making one for this build only."
+            echo "::warning::A lab APK cannot be installed over another: uninstall first."
+            ANDROID_KEYSTORE_PASSWORD="$(head -c 24 /dev/urandom | base64)"
+            ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+            ANDROID_KEY_ALIAS="lab"
+            export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD ANDROID_KEY_ALIAS
+            keytool -genkeypair -v -keystore release.jks -alias "$ANDROID_KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 365 \
+              -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" \
+              -dname "CN=Daylo Lab, OU=Lab, O=DLSLabs, C=DO" >/dev/null
+          else
+            for v in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+              if [ -z "$(eval echo "\${$v:-}")" ]; then
+                echo "::error::Missing secret $v"; exit 1
+              fi
+            done
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.jks
           fi
-          for v in ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            if [ -z "$(eval echo "\${$v:-}")" ]; then
-              echo "::error::Missing secret $v"; exit 1
-            fi
-          done
-
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.jks
           trap 'rm -f release.jks' EXIT
 
           BT="${ANDROID_HOME}/build-tools/$(ls ${ANDROID_HOME}/build-tools/ | tail -1)"
@@ -259,6 +270,69 @@ jobs:
           # up here and not six months later in a published APK.
           echo "--- signature of the APK about to be published ---"
           "$BT/apksigner" verify --print-certs "$ALIGNED_PATH" | grep -iE 'SHA-256|Subject'
+
+      # The same key as the APK, which is the point of doing it here rather than letting
+      # Play sign a fresh upload: it will be both the upload key and, because Henfry will
+      # hand it to Play when the app is created, the app signing key.
+      #
+      # jarsigner and not apksigner: apksigner signs APKs and refuses a bundle. Play
+      # re-signs what it receives, so this signature is what proves the upload is ours.
+      - name: Sign the AAB
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          AAB_PATH="$(find src-tauri/gen/android/app/build/outputs/bundle -name '*.aab' | head -1)"
+          if [ -z "$AAB_PATH" ]; then
+            echo "::error::No .aab came out of the build. Play takes nothing else, so this"
+            echo "::error::release would have no way into the closed test."
+            find src-tauri/gen/android/app/build/outputs -type d | head -20
+            exit 1
+          fi
+          # Lab only, and the same reason as the APK step above: no real key lives here,
+          # and nothing is ever submitted from this repository. What this does test, and
+          # what the public repository cannot test before a tag, is that the bundle builds
+          # and that jarsigner accepts it.
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::No keystore in secrets. Making one for this build only."
+            ANDROID_KEYSTORE_PASSWORD="$(head -c 24 /dev/urandom | base64)"
+            ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+            ANDROID_KEY_ALIAS="lab"
+            keytool -genkeypair -v -keystore release.jks -alias "$ANDROID_KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 365 \
+              -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" \
+              -dname "CN=Daylo Lab, OU=Lab, O=DLSLabs, C=DO" >/dev/null
+          else
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.jks
+          fi
+          trap 'rm -f release.jks' EXIT
+
+          jarsigner -keystore release.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -keypass "$ANDROID_KEY_PASSWORD" \
+            -signedjar Daylo-android.aab \
+            "$AAB_PATH" "$ANDROID_KEY_ALIAS"
+
+          # The same fingerprint the APK prints two steps above. If these two ever differ,
+          # it means one of them was signed with something else, and that is the failure
+          # that cannot be undone once people have installed it.
+          echo "--- signature of the AAB ---"
+          jarsigner -verify -verbose:summary -certs Daylo-android.aab | grep -iE 'X.509|digest algorithm' | head -5
+
+      # An artifact and not a release asset: nobody can install an .aab, it exists only to
+      # be handed to Play, and a file on the release page that cannot be opened is a
+      # question for everybody who reads that page. Ninety days is longer than any
+      # submission takes, and it can be moved to the release the day that stops being true.
+      - name: Keep the AAB for Play
+        uses: actions/upload-artifact@v4
+        with:
+          name: daylo-android-aab
+          path: Daylo-android.aab
+          retention-days: 90
+          if-no-files-found: error
 
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
@@ -409,12 +483,7 @@ jobs:
     steps:
       - name: Check build results
         run: |
-          # "skipped" counts here, and only here, because this repository turns the
-          # Android job off on purpose. In henfrydls/daylo that job runs and a skip would
-          # mean something went wrong, so this line is the one difference in this file.
-          if [ "${{ needs.build.result }}" == "success" ] && \
-             [ "${{ needs.build-android.result }}" == "success" -o \
-               "${{ needs.build-android.result }}" == "skipped" ]; then
+          if [ "${{ needs.build.result }}" == "success" ] && [ "${{ needs.build-android.result }}" == "success" ]; then
             echo "All builds completed successfully!"
             echo "Release artifacts have been uploaded to: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           else

@@ -1,1 +1,1 @@
-The third lab version, signed with the wrong key on purpose. Anything that offers this and then refuses it is behaving exactly as it should.
+Daylo Lab 1.4.2, the one to install. The next lab version is what it should offer you.
