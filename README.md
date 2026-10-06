@@ -5,11 +5,13 @@ thing end to end before the real one does it in front of people: **the updater**
 
 It publishes releases the same way Daylo does, with the same workflow and the same
 scripts, so that installing one version here and being offered the next is the same
-sequence of events that Daylo 1.4.0 will put in front of somebody in a few days.
+sequence of events a real Daylo puts in front of somebody. It has grown a second job since:
+anything that only a phone can judge gets built here first, because the public repository
+cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `18c58e9`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `7244a1a`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -53,10 +55,10 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-Two numbers about the sliding changed since the build you tried, and nothing else moved.
-Both are things only a hand can judge, so this round is two questions and no checklist.
+You broke the last one in fourteen seconds, and this is the build where that should not
+happen. Two things to try, and the first one is the one that matters.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.6** release of this repository.
+Install `Daylo-android-arm64.apk` from the **v1.4.7** release of this repository.
 **Uninstall whichever Daylo Lab is on the phone first**: lab builds are signed with a key
 made for that build, so one cannot be installed over another. It installs beside your real
 Daylo and touches nothing of it.
@@ -66,25 +68,36 @@ you saw.**
 
 ## The two things
 
-**1. The ends of the line give less.** In Year, drag right; in Month, drag left. There is
-nothing on the other side either way, so the view gives a little and stops. It gave 64
-pixels and gives 24 now. The question is whether it still says "there is nothing here"
-without showing you a white gap wide enough to look at.
+**1. Do it fast again.** Slide between Year and Month, and start the next slide straight
+away, without waiting for the first to come to rest. Several times, back and forth, as
+quickly as you can. Two things to watch while you do it:
 
-**2. Letting go lands instead of arriving.** Drag between Year and Month, past the point of
-no return, and let go. The last part of the movement takes a little longer than it did, 320
-to 450 ms rather than 280 to 400, and it eases into place on a different curve. Does it
-land, or does it dawdle?
+- the toggle at the top and the view underneath it have to say the same thing, always;
+- there must be no white where the other view is coming in from.
 
-Going back from a drag that did not go far enough is still 260 ms, and the toggle is still
-240, both untouched on purpose: if one of the three now feels out of step with the other
-two, say which one. That is the question left over from the last round.
+Both of those were wrong last time, for about a third of a second each. They were the same
+fault: letting go starts a landing that takes up to 450 ms, and a second slide inside that
+window was reading a view that had not changed yet, while the landing arrived in the middle
+of it and hid the panel your finger was pulling. A finger coming down now ends whatever is
+still landing, before anything else happens. The cost is that the first one can snap the
+last few pixels into place as you touch the screen: if that is what reads badly now, say so.
 
-## Closed since last round
+**2. The ends of the line, again.** In Year drag right, in Month drag left. It is not that
+there is more give than last time, it is that **it no longer stops**: it used to go 24
+pixels and then stand still while your finger kept going, which is what read as a jump. Now
+it gives less and less the further you push and never quite stops. Push a long way, well
+past where it used to freeze, and say whether it still feels like a wall or like something
+sagging.
 
-The left edge is settled: on your phone, with gesture navigation, the app wins the drag and
-Android's back gesture does not. Worth saying out loud that this was measured on one
-phone with one navigation setting, so it is an answer about that phone and not a law.
+## Settled, and not in this build
+
+The back button closes Daylo from both views. That is what it does now and what it will
+keep doing.
+
+The left edge was measured in the 1.4.6 round: starting a drag where Android's own back
+gesture lives, the app wins and the system does not. On that phone, with gesture
+navigation. It is an answer about that phone and not a law, which is worth remembering the
+first time somebody with a different one says otherwise.
 
 # Publishing a lab release
 
@@ -96,10 +109,10 @@ from.
 The tree is not edited here. It is rebuilt from Daylo's `main` with the lab differences
 applied on top, by the scripts kept outside this repository, and then:
 
-    git add -A && git commit -m "Daylo Lab 1.4.6: ..."
+    git add -A && git commit -m "Daylo Lab <version>: ..."
     git push origin main
     # once the push has gone green:
-    git tag v1.4.6 && git push origin v1.4.6
+    git tag v<version> && git push origin v<version>
 
 ## What to look at in each run
 
