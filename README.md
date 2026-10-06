@@ -21,12 +21,13 @@ v1.4.0 on `main`. Nothing here is written by hand except the differences below.
 | the updater endpoint is this repository's `latest.json`                 | it is the address under test                                                                                                                                                                                                                                                                                                                    |
 | the signing key is a **test key**, `F5D1D1CD8B8DFCA9`                   | the key that signs real Daylo updates is not in this repository and never will be. This one signs nothing anybody has installed                                                                                                                                                                                                                 |
 | the anonymous check-in is **off at compile time**                       | a lab copy has an empty profile, an empty profile is a new installation, and a new installation turns the check-in on. That would write rows into the panel that counts real installations. It is not an environment variable here, because a variable is something to forget on five runners and again on the machine that installs the result |
-| the Android job is off                                                  | Android has no updater. A phone updates from a store or from a new APK, so it is outside the path this repository runs                                                                                                                                                                                                                          |
+| the Android build signs with a key made for that build                  | the real signing key is not in this repository and must not be. Nothing on Android updates over anything, because there is no updater there, so there is nothing for a stable key to protect. The cost: two lab APKs cannot be installed over each other                                                                                        |
 | four workflows are gone (Flatpak, MSIX, the MSIX probe, the test build) | none of them is part of the update path, and each one costs runner minutes on a private repository                                                                                                                                                                                                                                              |
 
-`release.yml`, `ci.yml` and the signing-secret check are **unchanged**, and so is every
-script they call. That is the whole idea: if the manifest composer refuses something here,
-it will refuse the same thing there.
+`ci.yml` differs only in the identifier its smoke check looks for. `release.yml` differs in
+one place, marked in the file: the keystore it signs Android with. Everything else in both,
+and every script they call, is what `main` has. That is the whole idea: if the manifest
+composer refuses something here, it will refuse the same thing there.
 
 ## What a release here proves
 
@@ -45,18 +46,73 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-This is the rehearsal: install the lab's 1.4.0, let it find the lab's 1.4.1, and watch the
-whole thing happen. It is the same code that will do it in Daylo 1.4.0, pointed at this
-repository instead of the real one.
+Two rounds now, and they are different machines.
+
+**On a computer**, the one from last time: install the lab's 1.4.2, let it find the lab's
+1.4.3, and watch the update happen. That path has been walked before and what is being
+checked is that it still works with everything 1.4.1 changed.
+
+**On a phone**, the one that matters this time. The two main changes in 1.4.1 are things
+only a phone can show: the back button, and sliding between the views. There is no updater
+on Android at all, so nothing is being updated there; the APK is installed once and tried.
 
 **Write down anything that does not match what is described here, in the words you would
-use to tell somebody what you saw.** A step that goes differently is worth more than a
-step that goes as written.
+use to tell somebody what you saw.** A step that goes differently is worth more than a step
+that goes as written.
 
-## Where to get the lab's 1.4.0
+## On the phone
 
-Everything is under the **v1.4.0** release of this repository, not "latest": latest will be
-1.4.1, which is the thing being updated to.
+Install `Daylo-android-arm64.apk` from the **v1.4.2** release of this repository.
+
+It installs **beside** your real Daylo and touches nothing of it: different identifier,
+different data. It is called Daylo on the home screen and says **Daylo Lab** in its window,
+which is the only way to tell them apart at a glance.
+
+One thing to know before you start: **two lab APKs cannot be installed over each other.**
+They are signed with a key made for that build, because the real signing key is not in this
+repository. If you ever install a second one, uninstall the first.
+
+### The back button
+
+This is the change. It used to close Daylo from anywhere; now it takes away whatever is in
+front of you.
+
+1. Tap a day to open the day sheet. **Press back.** The sheet goes and Daylo stays.
+2. Open the menu, then **Check for new versions**. **Press back.** The sheet goes.
+3. Open a dialog from inside another one if you can find a pair. **Press back.** Only the
+   top one goes, and the one underneath is still there.
+4. From the main screen, with nothing open, **press back.** Daylo closes, as it always did.
+
+Step 4 is the one worth being sure about: it would be a bad trade to gain the first three
+and lose the way out.
+
+### Sliding between Year and Month
+
+The two views now move together under your finger instead of one being swapped for the
+other.
+
+1. In **Year**, drag **left**. Month follows your finger as you drag, and arrives when you
+   let go past about a third of the screen.
+2. Drag **right** from Month: Year comes back the same way.
+3. Drag **halfway and let go**: it goes back where it was.
+4. In **Year**, drag **right**: it gives a little and stops. There is nothing that way.
+   This used to go to Month, so if you learned the old way it will feel wrong at first,
+   and that is the change rather than a fault.
+5. Tap a month card in Year, and tap the month title in Month: both travel the same way the
+   finger does.
+
+**The one to try carefully, because it is the risk this round exists for:** in **Month**,
+start a drag to the right **within a thumb's width of the left edge of the screen**, where
+Android's own back gesture lives. Whatever happens, write down which one won: the app, the
+system, or neither.
+
+If your phone is set to reduce motion, nothing slides. The view changes at once, which is
+correct.
+
+## On a computer: the update
+
+Everything is under the **v1.4.2** release of this repository, not "latest": latest will be
+1.4.3, which is the thing being updated to.
 
 | System                  | File                            |
 | ----------------------- | ------------------------------- |
@@ -65,81 +121,39 @@ Everything is under the **v1.4.0** release of this repository, not "latest": lat
 | Mac with Apple chip     | `Daylo-macos-apple-silicon.dmg` |
 | Mac with Intel          | `Daylo-macos-intel.dmg`         |
 | Linux, Debian or Ubuntu | `Daylo-linux-amd64.deb`         |
-| Linux, anything else    | `Daylo_1.4.0_amd64.AppImage`    |
+| Linux, anything else    | `Daylo_1.4.2_amd64.AppImage`    |
 
 Each one lives at
-`https://github.com/henfrydls/daylo-lab/releases/download/v1.4.0/<the file name>`.
+`https://github.com/henfrydls/daylo-lab/releases/download/v1.4.2/<the file name>`.
 
-The first time each system opens it there is a warning about an unidentified developer.
-It is the same warning the real Daylo gets, and the release page of the real repository
-says how to get past it on each system.
+**1. It opens.** The window is titled **Daylo Lab**. It keeps its own data: nothing you do
+here touches your habits. There is no line about the anonymous check-in and no check-in
+entry in the menu, which is on purpose in this build.
 
-## What you should see, in order
+**2. A second or two later, a line appears under the header.**
 
-**1. It opens.** The window is titled **Daylo Lab**. This is not the real Daylo and it
-keeps its own data: nothing you do here touches your habits.
+> (an icon) **Daylo 1.4.3 is out.** Update ✕
 
-There is **no line about the anonymous check-in and no check-in entry in the menu**. That
-is on purpose in this build and it is the one difference you will notice that is not about
-updating.
+**3. Press the ✕.** The line goes and a small green dot appears on the three dots at the top
+right. The menu entry **Check for new versions** has the same dot.
 
-**2. A second or two later, a line appears under the header.** Not immediately: it appears
-when the question to GitHub comes back.
+**4. Open Check for new versions.** One line saying **Daylo 1.4.3 is out.**, one saying
+**Daylo asks GitHub and sends nothing about you.**, and two buttons: **Stop checking
+automatically** and **Update**.
 
-> (an icon) **Daylo 1.4.1 is out.** Update ✕
+**5. Press Update.** Downloading with a number that climbs and stops at 99, then
+**Installing. Daylo will close and open again.**, then the app comes back by itself.
 
-The icon on the left is the same one the menu entry has. **Update** is a link, not a
-button. The ✕ on the right reads "Later" to a screen reader.
-
-**3. Press the ✕.** The line goes. A small green dot appears on the three dots at the top
-right. Open the menu: **Check for new versions** has the same dot next to it.
-
-The dot means the offer is still there. It is not a warning and there is nothing wrong.
-
-**4. Open Check for new versions.** The sheet has one line saying **Daylo 1.4.1 is out.**,
-one line saying **Daylo asks GitHub and sends nothing about you.**, and two buttons:
-**Stop checking automatically** on the left and **Update** on the right.
-
-Press **Stop checking automatically**: the button's words change to **Start checking
-automatically** and nothing else happens. That word change is the whole acknowledgement.
-Press it again to turn it back on.
-
-Close the sheet. The dot is still there.
-
-**5. Press Update.** Either from the sheet or from the line: the sheet closes and the line
-takes over.
-
-- **Downloading… 42%** The number climbs. It stops at 99 rather than 100, on purpose:
-  what happens after the last byte is the signature being checked.
-- **Installing. Daylo will close and open again.**
-- The app closes and comes back by itself.
-
-On **Windows** the installer does the closing and reopening. On **Mac** and on the
-**AppImage** the app does it itself. Either way you should not have to open it again by
-hand. If you do, write down which system it happened on.
-
-**6. It came back.** Open the menu: the bottom row says **v1.4.1**. The line about a new
-version is gone, because there is no newer version to offer.
-
-That is the whole path: asked, offered, downloaded, verified, installed, and back.
-
-## The Debian and Ubuntu package is different, on purpose
+**6. It came back.** The menu's bottom row says **v1.4.3**, and the line is gone.
 
 If you installed the `.deb`, step 2 says the same sentence but the link says **Get it from
-the downloads page**, and pressing it opens the downloads page of the real Daylo in your
-browser. It does not install anything and it should not.
+the downloads page** and installs nothing, which is correct: installing a `.deb` needs your
+administrator password and Daylo does not ask anybody for that.
 
-The reason is that installing a `.deb` runs the package manager as administrator and asks
-for your password. Daylo does not ask anybody for that, so where it cannot replace itself
-quietly, it points instead.
+## If you want to do a round again
 
-## If you want to do the round again
-
-Uninstall and install the lab's 1.4.0 again. The line is shown once per version, so a copy
-that has already been offered 1.4.1 will not offer it a second time: it leaves the dot on
-the menu instead.
-
----
+Uninstall and install again. The line is shown once per version, so a copy that has already
+been offered 1.4.3 will not offer it twice: it leaves the dot on the menu instead.
 
 # Publishing a lab release
 
@@ -158,10 +172,12 @@ Then, once that run is finished:
 
 ## What to look at in each run
 
-1. **Five Build jobs**, one per platform. Android is off here and shows as skipped.
+1. **Five Build jobs**, one per platform, and Android, which builds here now so there is an
+   APK to try.
 2. **Updater manifest → Compose it.** It refuses if a platform is missing, if two artifacts
    claim one platform, or if the release note is empty, too long, or word for word the
-   previous one. Five platforms in, Android not among them: the manifest has
+   previous one. Five platforms in, Android not among them, because a phone has no updater
+   to read a manifest: it has
    `windows-x86_64`, `windows-aarch64`, `darwin-x86_64`, `darwin-aarch64`, `linux-x86_64`.
 3. **The address the app reads gives back this version.** This is the step that only a
    published release can answer, and the one this whole repository exists for. It asks
