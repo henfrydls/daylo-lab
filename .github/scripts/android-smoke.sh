@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-PKG=com.daylo.app
+PKG=com.daylo.lab
 ACTIVITY="$PKG/.MainActivity"
 APK="${SMOKE_APK:?SMOKE_APK is not set: the signing step should have put it in GITHUB_ENV}"
 

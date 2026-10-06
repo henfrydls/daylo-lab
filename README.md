@@ -9,8 +9,14 @@ sequence of events that Daylo 1.4.0 will put in front of somebody in a few days.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `71e7f470801a694418b693646b684fc3f94f08a7`, which is
-v1.4.0 on `main`. Nothing here is written by hand except the differences below.
+Built from `henfrydls/daylo` at commit `f91d6ed`, which is everything in 1.4.1 including
+the three things the last round of this repository found. Nothing here is written by hand
+except the differences below.
+
+This line said v1.4.0 for two refreshes after it stopped being true: the edit that should
+have moved it sat in a script that failed on a later line and wrote nothing. If you are
+reading it to know what you are testing, check it against the version in `package.json`,
+which is the one thing here that cannot drift.
 
 ## What is different, and why each one
 
@@ -46,114 +52,54 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-Two rounds now, and they are different machines.
+Everything you found last time is in this build. The list below is what to look at, and it
+is short on purpose: four of the five are things you already know are wrong, so the
+question is only whether they are right now.
 
-**On a computer**, the one from last time: install the lab's 1.4.2, let it find the lab's
-1.4.3, and watch the update happen. That path has been walked before and what is being
-checked is that it still works with everything 1.4.1 changed.
+**Write down anything that does not match, in the words you would use to tell somebody what
+you saw.** A step that goes differently is worth more than a step that goes as written.
 
-**On a phone**, the one that matters this time. The two main changes in 1.4.1 are things
-only a phone can show: the back button, and sliding between the views. There is no updater
-on Android at all, so nothing is being updated there; the APK is installed once and tried.
+Install `Daylo-android-arm64.apk` from the **v1.4.4** release of this repository. **If you
+still have the 1.4.2 on the phone, uninstall it first**: lab builds are signed with a key
+made for that build, so one cannot be installed over another. It installs beside your real
+Daylo and touches nothing of it.
 
-**Write down anything that does not match what is described here, in the words you would
-use to tell somebody what you saw.** A step that goes differently is worth more than a step
-that goes as written.
+## The five things
 
-## On the phone
+**1. Letting go of a slide.** Drag between Year and Month and let go. The view should be
+put down rather than snapped into place. It was 140 to 260 ms and it is 280 to 400 now,
+and going back is 260. This is the one that only a hand can judge: if it is still fast, or
+now slow, say which.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.2** release of this repository.
+**2. The toggle against the drag.** Tap **Year | Month** and then do the same journey by
+dragging. The toggle takes 240 ms, which is now **quicker** than letting go of a drag. That
+is the opposite of how the design had it, and it was left alone on purpose so that you
+could feel the other two first. Does the tap feel right beside the drag, or should it slow
+down to match?
 
-It installs **beside** your real Daylo and touches nothing of it: different identifier,
-different data. It is called Daylo on the home screen and says **Daylo Lab** in its window,
-which is the only way to tell them apart at a glance.
+**3. The day sheet with nothing in it.** Open a day before creating any activity. There
+should be one button, Create your first activity, and the cross in the corner. **Done is
+gone** from that state; it used to sit there doing nothing.
 
-One thing to know before you start: **two lab APKs cannot be installed over each other.**
-They are signed with a key made for that build, because the real signing key is not in this
-repository. If you ever install a second one, uninstall the first.
+**4. A short view fills the screen.** Go to Year and choose **By activity** with no
+activities, or any view that ends early. The white card should reach the bottom of the
+screen instead of stopping under its text and leaving grey. Then **drag sideways starting
+low down, where the grey used to be**: it should cross to the other view. That whole area
+did nothing before.
 
-### The back button
+While you are there: the floating button at the bottom right should still be on top of the
+card and not cut off, and a long view, a year with months in it, should still scroll
+normally.
 
-This is the change. It used to close Daylo from anywhere; now it takes away whatever is in
-front of you.
+**5. The one nobody has tested yet.** In **Month**, start a drag to the right **within a
+thumb's width of the left edge of the screen**, where Android's own back gesture lives.
+Whatever happens, write down which one won: the app, the system, or neither.
 
-1. Tap a day to open the day sheet. **Press back.** The sheet goes and Daylo stays.
-2. Open the menu, then **Check for new versions**. **Press back.** The sheet goes.
-3. Open a dialog from inside another one if you can find a pair. **Press back.** Only the
-   top one goes, and the one underneath is still there.
-4. From the main screen, with nothing open, **press back.** Daylo closes, as it always did.
+## The back button, again in one line
 
-Step 4 is the one worth being sure about: it would be a bad trade to gain the first three
-and lose the way out.
-
-### Sliding between Year and Month
-
-The two views now move together under your finger instead of one being swapped for the
-other.
-
-1. In **Year**, drag **left**. Month follows your finger as you drag, and arrives when you
-   let go past about a third of the screen.
-2. Drag **right** from Month: Year comes back the same way.
-3. Drag **halfway and let go**: it goes back where it was.
-4. In **Year**, drag **right**: it gives a little and stops. There is nothing that way.
-   This used to go to Month, so if you learned the old way it will feel wrong at first,
-   and that is the change rather than a fault.
-5. Tap a month card in Year, and tap the month title in Month: both travel the same way the
-   finger does.
-
-**The one to try carefully, because it is the risk this round exists for:** in **Month**,
-start a drag to the right **within a thumb's width of the left edge of the screen**, where
-Android's own back gesture lives. Whatever happens, write down which one won: the app, the
-system, or neither.
-
-If your phone is set to reduce motion, nothing slides. The view changes at once, which is
-correct.
-
-## On a computer: the update
-
-Everything is under the **v1.4.2** release of this repository, not "latest": latest will be
-1.4.3, which is the thing being updated to.
-
-| System                  | File                            |
-| ----------------------- | ------------------------------- |
-| Windows (Intel or AMD)  | `Daylo-windows-x64-setup.exe`   |
-| Windows on ARM          | `Daylo-windows-arm64-setup.exe` |
-| Mac with Apple chip     | `Daylo-macos-apple-silicon.dmg` |
-| Mac with Intel          | `Daylo-macos-intel.dmg`         |
-| Linux, Debian or Ubuntu | `Daylo-linux-amd64.deb`         |
-| Linux, anything else    | `Daylo_1.4.2_amd64.AppImage`    |
-
-Each one lives at
-`https://github.com/henfrydls/daylo-lab/releases/download/v1.4.2/<the file name>`.
-
-**1. It opens.** The window is titled **Daylo Lab**. It keeps its own data: nothing you do
-here touches your habits. There is no line about the anonymous check-in and no check-in
-entry in the menu, which is on purpose in this build.
-
-**2. A second or two later, a line appears under the header.**
-
-> (an icon) **Daylo 1.4.3 is out.** Update ✕
-
-**3. Press the ✕.** The line goes and a small green dot appears on the three dots at the top
-right. The menu entry **Check for new versions** has the same dot.
-
-**4. Open Check for new versions.** One line saying **Daylo 1.4.3 is out.**, one saying
-**Daylo asks GitHub and sends nothing about you.**, and two buttons: **Stop checking
-automatically** and **Update**.
-
-**5. Press Update.** Downloading with a number that climbs and stops at 99, then
-**Installing. Daylo will close and open again.**, then the app comes back by itself.
-
-**6. It came back.** The menu's bottom row says **v1.4.3**, and the line is gone.
-
-If you installed the `.deb`, step 2 says the same sentence but the link says **Get it from
-the downloads page** and installs nothing, which is correct: installing a `.deb` needs your
-administrator password and Daylo does not ask anybody for that.
-
-## If you want to do a round again
-
-Uninstall and install again. The line is shown once per version, so a copy that has already
-been offered 1.4.3 will not offer it twice: it leaves the dot on the menu instead.
+It was right last time and nothing here touched it, so it is only worth a moment: open a
+dialog, press back, the dialog goes and Daylo stays. From the main screen with nothing
+open, back still closes Daylo.
 
 # Publishing a lab release
 
