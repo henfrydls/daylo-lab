@@ -1,1 +1,1 @@
-Daylo Lab 1.4.2, the one to install. The next lab version is what it should offer you.
+Daylo Lab 1.4.3. If a copy of 1.4.2 offered you this and brought you here, the path works.
