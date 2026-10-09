@@ -52,6 +52,21 @@ will refuse the same thing there.
 
 Step 4 is the one nothing else could prove.
 
+## What a release here cannot prove
+
+The differences that make this repository safe also make parts of the application
+unreachable, and a round that forgets which parts will report faults that do not exist. One
+already did.
+
+- **Send feedback, and the question with the five stars.** The check-in is off at compile
+  time here, and the gate that opens that question asks whether the check-in exists. So it
+  never opens, and the button falls through to a `mailto:` instead. In a real Daylo the
+  question appears. Nothing is wrong with it; it just cannot be seen from here.
+- **Anything about the anonymous check-in**, for the same reason: the switch is not there,
+  and neither is the line that says what gets sent.
+- **Updating an Android build over another.** Each build here is signed with a key made for
+  it, so two of them cannot be installed over each other at all.
+
 ---
 
 # The round
