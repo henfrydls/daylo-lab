@@ -14,10 +14,10 @@ on:
     inputs:
       from:
         description: The version already installed
-        default: v1.4.8
+        default: v1.4.9
       to:
         description: The version the installer carries
-        default: v1.4.9
+        default: v1.4.10
 
 jobs:
   windows-update-path:

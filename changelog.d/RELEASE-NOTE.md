@@ -1,1 +1,1 @@
-Daylo Lab 1.4.9: a Settings screen that did not exist, and a day sheet that comes and goes instead of appearing.
+Daylo Lab 1.4.10: the sheet stops flickering, Settings gets your two changes, and a stopwatch for the slow first opening.
