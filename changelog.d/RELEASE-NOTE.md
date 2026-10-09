@@ -1,1 +1,1 @@
-Daylo Lab 1.4.10: the sheet stops flickering, Settings gets your two changes, and a stopwatch for the slow first opening.
+Daylo Lab 1.4.11: the white screen was my stopwatch. It opens again, with everything 1.4.10 was meant to show.

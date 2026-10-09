@@ -56,15 +56,22 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-Everything you asked for last time, and a stopwatch for the one thing we could not find
-from here. **Uninstall the Daylo Lab you have before installing this one.** Lab builds are
-signed with a key made for that build, so one cannot go over another. It installs beside
-your real Daylo and touches nothing of it.
+The 1.4.10 opened to a white screen and never got past it. That was the stopwatch I added,
+not anything in Daylo: it tried to wrap a piece of Tauri that Tauri does not allow anybody
+to rewrite, which threw before the application had drawn a single thing. Sorry about the
+wasted install.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.10** release of this repository.
+Everything you were meant to try in that round is here, and the stopwatch is here too,
+measuring less and unable to do that again.
+
+**Uninstall the Daylo Lab you have before installing this one.** Lab builds are signed with
+a key made for that build, so one cannot go over another. It installs beside your real
+Daylo and touches nothing of it.
+
+Install `Daylo-android-arm64.apk` from the **v1.4.11** release of this repository.
 
 **Write down anything that does not match, in the words you would use to tell somebody what
-you saw.**
+you saw.** And first of all: **did it open?**
 
 ## 1. The sheet that flickered
 
@@ -100,10 +107,14 @@ a computer, so this build times it on yours. **Do this in order, on a fresh star
 
 There is a grey line at the very end:
 
-> Lab stopwatch: first plugin call 42 ms, first day sheet 310 ms.
+> Lab stopwatch: first day sheet 310 ms.
 
-**Write both numbers down**, and say whether that first sheet felt slow to you. If it felt
+**Write the number down**, and say whether that first sheet felt slow to you. If it felt
 fine this time, say that too: a number without your impression beside it tells me nothing.
+
+The line used to promise a second number, for the first call into the Android side. That
+is the one that could not be measured without breaking the app, so it is gone rather than
+sitting there saying "not yet" for ever.
 
 # Publishing a lab release
 

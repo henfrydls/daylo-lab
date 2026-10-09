@@ -1,42 +1,29 @@
 /**
  * A stopwatch for the lab, and for one question: why is the first day sheet slow?
  *
- * Henfry: the first time a sheet opens it drags, and every time after that it is fine.
- * It does not reproduce in Chromium, where three openings measured 433, 368 and 410 ms
- * and fetched nothing at all, so the cause is something the Android webview does and the
- * desktop engine does not.
+ * Henfry: the first time a sheet opens it drags, and every time after that it is fine. It
+ * does not reproduce in Chromium, where three openings measured 433, 368 and 410 ms and
+ * fetched nothing at all, so the cause is something the Android webview does and the
+ * desktop engine does not. This times it where it happens and writes the number where
+ * somebody can read it on the phone, with no cable and no devtools.
  *
- * The one piece of asynchronous work on that path is registering the back-button
- * listener, which is a round trip to the native side. It happens on every opening, so by
- * itself it does not explain a first one being slower; what might is the first call
- * setting the plugin channel up. This measures both and writes them where somebody can
- * read them on the phone, with no cable and no devtools.
+ * It measures the opening and nothing else. An earlier version also timed the first call
+ * across the Tauri bridge by wrapping `window.__TAURI_INTERNALS__.invoke`. That cannot be
+ * done: Tauri defines that property with neither `writable` nor `configurable`, so a
+ * module, which is strict, throws on the assignment. It threw while `main.tsx` was being
+ * imported, before React had mounted anything, and Daylo opened to a white screen on every
+ * launch. The tests missed it because the bridge they simulated was an ordinary writable
+ * object: a simulation kinder than the thing it stood for.
+ *
+ * Hence the shape of what is left. It touches nothing it does not own, it starts after the
+ * first render, and it cannot throw out of itself. An instrument is allowed to fail. It is
+ * not allowed to take the application with it.
  *
  * It exists in this repository and must never exist in henfrydls/daylo.
  */
-type Clock = { firstInvoke: number | null; firstOpen: number | null; startedAt: number | null }
+type Clock = { firstOpen: number | null; startedAt: number | null }
 
-const clock: Clock = { firstInvoke: null, firstOpen: null, startedAt: null }
-
-function watchTheBridge(): void {
-  const w = window as unknown as {
-    __TAURI_INTERNALS__?: { invoke?: (...args: never[]) => unknown }
-  }
-  const internals = w.__TAURI_INTERNALS__
-  if (!internals || typeof internals.invoke !== 'function') return
-  const real = internals.invoke.bind(internals)
-  internals.invoke = ((command: string, ...rest: never[]) => {
-    const asked = performance.now()
-    const answer = real(command as never, ...rest)
-    if (clock.firstInvoke === null && String(command).startsWith('plugin:app|register')) {
-      void Promise.resolve(answer).finally(() => {
-        clock.firstInvoke = Math.round(performance.now() - asked)
-        show()
-      })
-    }
-    return answer
-  }) as typeof internals.invoke
-}
+const clock: Clock = { firstOpen: null, startedAt: null }
 
 /** The tap that is going to open a day, which is the moment the clock starts. */
 function watchTheTap(): void {
@@ -75,12 +62,9 @@ function watchTheSheet(): void {
 function show(): void {
   const into = document.querySelector('[data-testid="settings-scroller"]')
   if (!into) return
-  const say = (n: number | null) => (n === null ? 'not yet' : n + ' ms')
   const words =
-    'Lab stopwatch: first plugin call ' +
-    say(clock.firstInvoke) +
-    ', first day sheet ' +
-    say(clock.firstOpen) +
+    'Lab stopwatch: first day sheet ' +
+    (clock.firstOpen === null ? 'not yet' : clock.firstOpen + ' ms') +
     '.'
 
   const id = 'lab-stopwatch'
@@ -97,17 +81,32 @@ function show(): void {
   line.textContent = words
 }
 
-export function startLabStopwatch(): void {
-  // The body may not be there yet, depending on where this ends up in the bundle, and an
-  // observer given null throws and takes the whole stopwatch with it. A measuring device
-  // that fails silently is worse than no measuring device: it reads "not yet" for ever and
-  // somebody concludes the thing being measured did not happen.
+function begin(): void {
   if (!document.body) {
-    document.addEventListener('DOMContentLoaded', () => startLabStopwatch(), { once: true })
+    document.addEventListener('DOMContentLoaded', () => begin(), { once: true })
     return
   }
-  watchTheBridge()
   watchTheTap()
   watchTheSheet()
   new MutationObserver(() => show()).observe(document.body, { childList: true, subtree: true })
+}
+
+/**
+ * Started after the application has rendered, and unable to throw out of itself.
+ *
+ * Both of those are one lesson, learnt the hard way: this ran before the first render
+ * once, threw, and Daylo never started.
+ */
+export function startLabStopwatch(): void {
+  try {
+    setTimeout(() => {
+      try {
+        begin()
+      } catch (error) {
+        console.error('[lab] the stopwatch did not start', error)
+      }
+    }, 0)
+  } catch (error) {
+    console.error('[lab] the stopwatch could not even be scheduled', error)
+  }
 }
