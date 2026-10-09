@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `5b6542d`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `b32730e`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -55,41 +55,54 @@ Step 4 is the one nothing else could prove.
 
 # The round
 
-One thing changed, and it is the one you said: letting go.
+The biggest build yet: a whole screen that did not exist, and two movements you already
+asked about. **Uninstall the Daylo Lab you have before installing this one.** Lab builds are
+signed with a key made for that build, so one cannot go over another. It installs
+beside your real Daylo and touches nothing of it.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.8** release of this repository.
-**Uninstall whichever Daylo Lab is on the phone first**: lab builds are signed with a key
-made for that build, so one cannot be installed over another. It installs beside your real
-Daylo and touches nothing of it.
+Install `Daylo-android-arm64.apk` from the **v1.4.9** release of this repository.
 
 **Write down anything that does not match, in the words you would use to tell somebody what
 you saw.**
 
-## The one thing
+## 1. Settings, which is new
 
-**Let go while your hand is still moving.** Slide between Year and Month at a fair pace and
-take your finger off without slowing down first. The view should carry on at the speed your
-hand had and then be put down, with nothing in between.
+The three dots at the top now hold **two** entries: `Daily reminder` and `Settings`. Both
+open the same screen; the first is only a way of being taken straight to the reminder.
+Everything that used to be in that menu is inside: export, import, the reminder, the
+anonymous check-in, and who made Daylo.
 
-What you said last time was that letting go fast made it go slower at once, and you were
-exactly right: it was filmed and read frame by frame, and the first frame after your finger
-left moved four pixels where your finger had been moving sixty. The view stopped dead for a
-frame and set off again. The curve it was following started from a standstill by
-construction, whatever your hand had been doing.
+Things to try, in the order they are easy to get wrong:
 
-Now the curve is drawn for the gesture you just made.
+- **It takes the whole screen** and comes in from the right. Back closes it and leaves the
+  calendar where it was.
+- **Scroll to the bottom.** The last row, the links, must not sit under the system's
+  gesture bar. That is the complaint you made once about the old reminder sheet.
+- **Tap the time** under Daily reminder. Android's own picker should open, and when it
+  closes **no green ring must be left behind** on the field. That one is a trap: the engine
+  wants to leave a ring there and it has to be talked out of it.
+- **Export and Import** still open the windows they always did.
 
-**Then let go of a slow one.** Drag across without hurrying, and stop your hand before
-lifting it. That one should be unchanged from the last build: gentle, put down rather than
-thrown. If it feels different, that is worth knowing, because it is not supposed to be.
+## 2. Two lines, which are a question for you
 
-The two together are the whole question: a fast release should feel continuous, and a slow
-one should feel exactly as it did.
+Under the two switches there is now a grey line saying what they cost:
 
-## Nothing else moved
+- **Anonymous check-in:** "Turning it off deletes the random number."
+- **Daily reminder:** "Android may deliver it a few minutes late."
 
-The ends of the line, going back from a drag that did not go far enough, the toggle, and
-how long a landing takes are all untouched. The back button closes Daylo from both views.
+The first one puts back a warning the old sheet gave and the new design had dropped. **Say
+whether you want them.** They can go, or be shorter, or be worded another way.
+
+## 3. The day sheet, which should now move
+
+Tap a day. The sheet should **come up from under the bottom edge** and, when you close it,
+**go back down** rather than vanishing. Before this it did neither: it appeared and
+disappeared, which is what you said the first time you held 1.4.1.
+
+## Settled, and not for you to check
+
+The back button closes Daylo from both views. The sliding between Year and Month is as you
+approved it in 1.4.8.
 
 # Publishing a lab release
 
