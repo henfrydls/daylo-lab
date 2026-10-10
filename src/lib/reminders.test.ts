@@ -299,4 +299,77 @@ describe('the time the offer proposes', () => {
     expect(at(22, 0)).toEqual({ hour: 20, minute: 0 })
     expect(at(21, 0)).toEqual({ hour: 22, minute: 0 })
   })
+
+  /**
+   * The examples, which are the part that goes wrong.
+   *
+   * The rule was right and tested from the day it was written. What was wrong was the
+   * sentence explaining it, in the comment on `offeredReminderTime` and again in the
+   * changelog fragment, both giving 22:52 as a reminder for eleven tonight. That is the
+   * one case `does not propose eleven` exists to forbid, and nothing checked the example
+   * against the rule because an example in a comment is not run.
+   *
+   * It is run now. Change either sentence and this is what says so.
+   */
+  it('matches the example the comment gives, and the one the changelog gives', () => {
+    // "told at 20:52, a reminder at 21:00 is tonight"
+    expect(at(20, 52)).toEqual({ hour: 21, minute: 0 })
+    // "agreed to at ten to nine is one that arrives at nine"
+    expect(at(20, 50)).toEqual({ hour: 21, minute: 0 })
+    // "from ten at night until six in the morning ... eight in the evening"
+    expect(at(22, 0)).toEqual({ hour: 20, minute: 0 })
+    expect(at(5, 59)).toEqual({ hour: 20, minute: 0 })
+    expect(at(6, 0)).toEqual({ hour: 7, minute: 0 })
+  })
+})
+
+/**
+ * What to do when the phone does not answer.
+ *
+ * Found while simulating the Tauri bridge for something else: a stub that returned null
+ * where the plugin returns a list made this throw. The plugin is not expected to do that,
+ * which is exactly why the line had no guard and why it is worth one: the cases nobody
+ * expects are the ones nobody has written down.
+ *
+ * Which way to fall is the real question, and it is not "assume nothing is scheduled".
+ * This function is only reached when there is nothing left to be reminded about, so taking
+ * the reminder down is what it came to do. An unknown answer falls towards doing it.
+ */
+describe('when the phone does not say what is scheduled', () => {
+  it('takes the reminder down anyway when the answer is nothing', async () => {
+    pretendAndroid()
+    pending.mockResolvedValue(null)
+
+    await reconcileReminder(0)
+
+    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+  })
+
+  it('takes it down when the answer is not a list at all', async () => {
+    pretendAndroid()
+    pending.mockResolvedValue(undefined)
+
+    await reconcileReminder(0)
+
+    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+  })
+
+  it('takes it down when asking throws', async () => {
+    pretendAndroid()
+    pending.mockRejectedValue(new Error('the plugin is not there'))
+
+    await expect(reconcileReminder(0)).resolves.toBeUndefined()
+    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+  })
+
+  // And a real empty list still means what it says: nothing of ours is scheduled, so there
+  // is nothing to cancel. That is the difference this whole change is about.
+  it('cancels nothing when the phone says the list is empty', async () => {
+    pretendAndroid()
+    pending.mockResolvedValue([])
+
+    await reconcileReminder(0)
+
+    expect(cancel).not.toHaveBeenCalled()
+  })
 })

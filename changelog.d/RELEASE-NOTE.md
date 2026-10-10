@@ -1,1 +1,1 @@
-Daylo Lab 1.4.11: the white screen was my stopwatch. It opens again, with everything 1.4.10 was meant to show.
+Daylo Lab 1.4.12: Settings reads as a list rather than a ledger, and the dialogs come up and go down instead of appearing.

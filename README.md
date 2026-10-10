@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `c6eb322`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `bb94855`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -30,7 +30,6 @@ difference of one place where there were two.
 | the signing key is a **test key**, `F5D1D1CD8B8DFCA9`                   | the key that signs real Daylo updates is not in this repository and never will be. This one signs nothing anybody has installed                                                                                                                                                                                                                 |
 | the anonymous check-in is **off at compile time**                       | a lab copy has an empty profile, an empty profile is a new installation, and a new installation turns the check-in on. That would write rows into the panel that counts real installations. It is not an environment variable here, because a variable is something to forget on five runners and again on the machine that installs the result |
 | the Android build signs with a key made for that build                  | the real signing key is not in this repository and must not be. Nothing on Android updates over anything, because there is no updater there, so there is nothing for a stable key to protect. The cost: two lab APKs cannot be installed over each other                                                                                        |
-| a stopwatch in `src/lib/labStopwatch.ts`, started from `main.tsx`       | the first sheet of a session is slow on a phone and on no desktop, so it is timed where it happens and written at the bottom of Settings, which is somewhere to read a number without a cable. It watches from outside and no component of the application knows it is there                                                                    |
 | four workflows are gone (Flatpak, MSIX, the MSIX probe, the test build) | none of them is part of the update path, and each one costs runner minutes on a private repository                                                                                                                                                                                                                                              |
 
 `ci.yml` and `.github/scripts/android-smoke.sh` differ only in the identifier their smoke
@@ -63,7 +62,11 @@ already did.
   never opens, and the button falls through to a `mailto:` instead. In a real Daylo the
   question appears. Nothing is wrong with it; it just cannot be seen from here.
 - **Anything about the anonymous check-in**, for the same reason: the switch is not there,
-  and neither is the line that says what gets sent.
+  and neither is **What gets sent**, the row that opens into the whole message. On Android
+  there is no updater either, so the Privacy section of a lab build is **one row**, Send
+  feedback, where a real Daylo on a phone has three. Checked in the code rather than
+  assumed: `checkin_fields` returns an error here, the screen asks that command whether the
+  check-in exists, and an error means no.
 - **Updating an Android build over another.** Each build here is signed with a key made for
   it, so two of them cannot be installed over each other at all.
 
@@ -71,65 +74,79 @@ already did.
 
 # The round
 
-The 1.4.10 opened to a white screen and never got past it. That was the stopwatch I added,
-not anything in Daylo: it tried to wrap a piece of Tauri that Tauri does not allow anybody
-to rewrite, which threw before the application had drawn a single thing. Sorry about the
-wasted install.
-
-Everything you were meant to try in that round is here, and the stopwatch is here too,
-measuring less and unable to do that again.
+This one is 1.4.2 as it will go out: a Settings screen that reads as a list, dialogs that
+come up and go down instead of appearing, and the day sheet you already saw sliding.
 
 **Uninstall the Daylo Lab you have before installing this one.** Lab builds are signed with
 a key made for that build, so one cannot go over another. It installs beside your real
 Daylo and touches nothing of it.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.11** release of this repository.
+Install `Daylo-android-arm64.apk` from the **v1.4.12** release of this repository.
 
 **Write down anything that does not match, in the words you would use to tell somebody what
 you saw.** And first of all: **did it open?**
 
-## 1. The sheet that flickered
+No stopwatch this time. It went out in 1.4.11, came back with no number, and an instrument
+nobody reads is one more thing that can break the build that has to be trustworthy. If the
+first sheet of a session feels slow again, say so and it comes back.
 
-Open Activities and press things: the pencil, a name, anything. **The blurred calendar
-behind the sheet should stay blurred.** Before this, every press took the blur off and put
-it back, six times in four seconds by your own video.
+## 1. Settings, with no lines in it
 
-Then drag the sheet down by its handle. It should follow your finger, and the blur should
-fade away as it goes rather than disappearing at the first touch.
+Open Settings from the corner. **There should be no grey rules between the rows** anywhere:
+not between Export and Import, not between Version and Made by, not above the links at the
+foot. What tells one row from the next is the space around it. If any two rows read as
+glued together, that is worth saying.
 
-## 2. Settings, with your two changes
+At the foot there are now **four links on one line**: Website, Source code, License,
+Privacy policy. The policy used to be a row inside the Privacy section and is not there any
+more.
 
-- The section is called **Privacy** now, and ends with a **Privacy policy** row that opens
-  the real page.
-- With the daily reminder **off**, there is only the one row. Turn it on and the time and
-  the line about Android's timing **open out**; turn it off and they fold away.
+## 2. Send feedback, as a row
 
-## 3. The reminder it offers you
+In the Privacy section, **Send feedback is a row you can press**, with a chevron and a line
+under it saying "Only what you type, and only when you press Send." It used to be a word at
+the foot of the screen.
 
-This needs a fresh start to see: the offer only comes once. If you want to try it, clear
-Daylo Lab's data first, then make one activity. **It should propose the next hour on the
-hour** rather than a fixed time: at 14:37 it offers 15:00. Between eleven at night and
-seven in the morning it offers 8:00 PM instead.
+**What to look at is how it sits**, not what it does. Pressing it here opens a letter rather
+than the question with the five stars, and that is this repository rather than a fault: the
+check-in is off at compile time and the question asks the check-in whether it exists.
 
-## 4. The stopwatch, which is the one for me
+**And expect the Privacy section to be short here.** One row, Send feedback. Your real Daylo
+has the Anonymous check-in switch and What gets sent above it; neither can exist in a lab
+build, so neither is something this round can show you. If you want to see those two, they
+are in the real 1.4.2 when it goes out.
 
-You said the first sheet of a session is slow and the rest are fine. It does not happen on
-a computer, so this build times it on yours. **Do this in order, on a fresh start:**
+## 3. Export and Import, opening and closing
 
-1. Open Daylo Lab.
-2. Tap a day, once, and watch how slow the sheet is.
-3. Close it, open Settings, scroll to the bottom.
+Settings → Export. **It should grow into place rather than being suddenly there**, and go
+back down the same way when you close it. Same with Import. Before this they appeared and
+vanished, which reads as the screen flickering.
 
-There is a grey line at the very end:
+Then: open Import, choose a file, close it without importing, and open it again. **It
+should be empty**, as if you had never chosen anything.
 
-> Lab stopwatch: first day sheet 310 ms.
+## 4. The first day you tap
 
-**Write the number down**, and say whether that first sheet felt slow to you. If it felt
-fine this time, say that too: a number without your impression beside it tells me nothing.
+Tap a day. The sheet should come up from the bottom edge and go back down the same way, and
+keep the day written on it until it has gone.
 
-The line used to promise a second number, for the first call into the Android side. That
-is the one that could not be measured without breaking the app, so it is gone rather than
-sitting there saying "not yet" for ever.
+**The one thing I want your words on: the first one of a session.** Open the app fresh, tap
+a day once, and say whether that first sheet felt slow. The ones after it were always fine;
+it is the first that you called slow, and no computer here reproduces it.
+
+## 5. The reminder, on a phone, which is the only place it is real
+
+With the daily reminder **off**, Settings shows one row. Turn it on and the time and the
+line about Android's timing **open out**; turn it off and they fold away.
+
+The offer only comes once, so seeing it needs a fresh start: clear Daylo Lab's data, then
+make one activity. **It should propose the next hour on the hour** rather than a fixed
+time: at 14:37 it offers 15:00. From **ten at night until six in the morning** it offers
+8:00 PM instead, because the next hour there is a notification nobody wants.
+
+And one that is easier to describe than to trigger: with the reminder on, delete your last
+activity. **The reminder should go off by itself**, because there is nothing left to be
+reminded about.
 
 # Publishing a lab release
 
