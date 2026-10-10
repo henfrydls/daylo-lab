@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `bb94855`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `9d0e642`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -74,79 +74,56 @@ already did.
 
 # The round
 
-This one is 1.4.2 as it will go out: a Settings screen that reads as a list, dialogs that
-come up and go down instead of appearing, and the day sheet you already saw sliding.
+Everything that opens on top of something else now moves, and on a phone it moves the way
+the day sheet does: up from the bottom edge, and back down.
 
 **Uninstall the Daylo Lab you have before installing this one.** Lab builds are signed with
 a key made for that build, so one cannot go over another. It installs beside your real
 Daylo and touches nothing of it.
 
-Install `Daylo-android-arm64.apk` from the **v1.4.12** release of this repository.
+Install `Daylo-android-arm64.apk` from the **v1.4.13** release of this repository.
 
 **Write down anything that does not match, in the words you would use to tell somebody what
 you saw.** And first of all: **did it open?**
 
-No stopwatch this time. It went out in 1.4.11, came back with no number, and an instrument
-nobody reads is one more thing that can break the build that has to be trustworthy. If the
-first sheet of a session feels slow again, say so and it comes back.
+## 1. Everything that opens, opening
 
-## 1. Settings, with no lines in it
+Four things to try, and the same question for each: **does it come up from the bottom edge,
+and go back down when you close it?** Before this round they were simply there, and then
+simply gone.
 
-Open Settings from the corner. **There should be no grey rules between the rows** anywhere:
-not between Export and Import, not between Version and Made by, not above the links at the
-foot. What tells one row from the next is the space around it. If any two rows read as
-glued together, that is worth saying.
+- **Settings, Export.** Then Import.
+- **The activity editor.** Activities, then the pencil on one of them, or Add activity.
+- **The question before deleting.** Activities, then the bin on one of them.
+- **The reminder offer**, if you can still get it: clear Daylo Lab's data and make one
+  activity. This one had never moved at all, and it is the one you are most likely to meet
+  without looking for it.
 
-At the foot there are now **four links on one line**: Website, Source code, License,
-Privacy policy. The policy used to be a row inside the Privacy section and is not there any
-more.
+## 2. The one that cost something
 
-## 2. Send feedback, as a row
+Open Activities, press the bin on an activity, and then **press Cancel**.
 
-In the Privacy section, **Send feedback is a row you can press**, with a chevron and a line
-under it saying "Only what you type, and only when you press Send." It used to be a word at
-the foot of the screen.
+**The activities panel should still be there, in the same place, with the activity still in
+it.** Before this it closed: you said no to deleting something and lost your place. The
+same with the back gesture or Escape, which should take away the question and leave the
+panel alone. Press back again and then the panel closes, because by then it is the thing in
+front of you.
 
-**What to look at is how it sits**, not what it does. Pressing it here opens a letter rather
-than the question with the five stars, and that is this repository rather than a fault: the
-check-in is off at compile time and the question asks the check-in whether it exists.
+And **Delete should still delete**, with the panel staying open behind it.
 
-**And expect the Privacy section to be short here.** One row, Send feedback. Your real Daylo
-has the Anonymous check-in switch and What gets sent above it; neither can exist in a lab
-build, so neither is something this round can show you. If you want to see those two, they
-are in the real 1.4.2 when it goes out.
+## 3. Settings, one small thing
 
-## 3. Export and Import, opening and closing
+The four links at the foot, Website, Source code, License and Privacy policy, should sit in
+**the middle** rather than against the left edge. That is the one thing you asked for after
+the last round.
 
-Settings → Export. **It should grow into place rather than being suddenly there**, and go
-back down the same way when you close it. Same with Import. Before this they appeared and
-vanished, which reads as the screen flickering.
+## What this build still cannot show you
 
-Then: open Import, choose a file, close it without importing, and open it again. **It
-should be empty**, as if you had never chosen anything.
-
-## 4. The first day you tap
-
-Tap a day. The sheet should come up from the bottom edge and go back down the same way, and
-keep the day written on it until it has gone.
-
-**The one thing I want your words on: the first one of a session.** Open the app fresh, tap
-a day once, and say whether that first sheet felt slow. The ones after it were always fine;
-it is the first that you called slow, and no computer here reproduces it.
-
-## 5. The reminder, on a phone, which is the only place it is real
-
-With the daily reminder **off**, Settings shows one row. Turn it on and the time and the
-line about Android's timing **open out**; turn it off and they fold away.
-
-The offer only comes once, so seeing it needs a fresh start: clear Daylo Lab's data, then
-make one activity. **It should propose the next hour on the hour** rather than a fixed
-time: at 14:37 it offers 15:00. From **ten at night until six in the morning** it offers
-8:00 PM instead, because the next hour there is a notification nobody wants.
-
-And one that is easier to describe than to trigger: with the reminder on, delete your last
-activity. **The reminder should go off by itself**, because there is nothing left to be
-reminded about.
+The same as last time, and worth repeating so that nothing gets reported as missing:
+**there is no Anonymous check-in switch and no What gets sent row here**, because the
+check-in is off at compile time in this repository. The Privacy section is one row, Send
+feedback, where your real Daylo has three. Pressing Send feedback opens a letter rather
+than the question with the five stars, for the same reason.
 
 # Publishing a lab release
 
