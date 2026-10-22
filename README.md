@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `9d0e642`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `eb71f8a`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -74,56 +74,12 @@ already did.
 
 # The round
 
-Everything that opens on top of something else now moves, and on a phone it moves the way
-the day sheet does: up from the bottom edge, and back down.
+Nothing to install this time. This round is for the release workflow, which no pull request
+runs: it now writes SHA256SUMS after the update manifest, so that the list describes every
+file of the release, `latest.json` included.
 
-**Uninstall the Daylo Lab you have before installing this one.** Lab builds are signed with
-a key made for that build, so one cannot go over another. It installs beside your real
-Daylo and touches nothing of it.
-
-Install `Daylo-android-arm64.apk` from the **v1.4.13** release of this repository.
-
-**Write down anything that does not match, in the words you would use to tell somebody what
-you saw.** And first of all: **did it open?**
-
-## 1. Everything that opens, opening
-
-Four things to try, and the same question for each: **does it come up from the bottom edge,
-and go back down when you close it?** Before this round they were simply there, and then
-simply gone.
-
-- **Settings, Export.** Then Import.
-- **The activity editor.** Activities, then the pencil on one of them, or Add activity.
-- **The question before deleting.** Activities, then the bin on one of them.
-- **The reminder offer**, if you can still get it: clear Daylo Lab's data and make one
-  activity. This one had never moved at all, and it is the one you are most likely to meet
-  without looking for it.
-
-## 2. The one that cost something
-
-Open Activities, press the bin on an activity, and then **press Cancel**.
-
-**The activities panel should still be there, in the same place, with the activity still in
-it.** Before this it closed: you said no to deleting something and lost your place. The
-same with the back gesture or Escape, which should take away the question and leave the
-panel alone. Press back again and then the panel closes, because by then it is the thing in
-front of you.
-
-And **Delete should still delete**, with the panel staying open behind it.
-
-## 3. Settings, one small thing
-
-The four links at the foot, Website, Source code, License and Privacy policy, should sit in
-**the middle** rather than against the left edge. That is the one thing you asked for after
-the last round.
-
-## What this build still cannot show you
-
-The same as last time, and worth repeating so that nothing gets reported as missing:
-**there is no Anonymous check-in switch and no What gets sent row here**, because the
-check-in is off at compile time in this repository. The Privacy section is one row, Send
-feedback, where your real Daylo has three. Pressing Send feedback opens a letter rather
-than the question with the five stars, for the same reason.
+Growth downloads every asset of the **v1.4.14** release and checks each one against
+SHA256SUMS. Henfry has nothing to do in this round.
 
 # Publishing a lab release
 

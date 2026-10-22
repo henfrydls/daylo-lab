@@ -1,1 +1,1 @@
-Daylo Lab 1.4.13: on a phone every dialog comes up from the bottom edge, and saying no to deleting an activity leaves the panel where it was.
+Daylo Lab 1.4.14: the list of checksums now describes every file of the release, the update manifest included.
