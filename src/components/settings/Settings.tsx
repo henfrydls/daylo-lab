@@ -16,6 +16,7 @@ import { isTauri } from '@tauri-apps/api/core'
 import { openLink } from '../../lib/openLink'
 import { FEEDBACK_MAILTO } from '../../lib/feedbackInvite'
 import type { UpdateStatus } from '../../hooks/useUpdates'
+import { count } from '../../lib/plural'
 
 /** How long the panel takes to arrive and to leave. */
 const TAKES = 250
@@ -199,8 +200,7 @@ export function Settings({
 
   if (!shouldRender) return null
 
-  const say = (plural: number, one: string, many: string) => (plural === 1 ? one : many)
-  const held = `${counts.activities} ${say(counts.activities, 'activity', 'activities')}, ${counts.logs} ${say(counts.logs, 'entry', 'entries')}`
+  const held = `${count(counts.activities, 'activity', 'activities')}, ${count(counts.logs, 'entry', 'entries')}`
 
   return (
     <div className="fixed inset-0 z-50" data-testid="settings">
@@ -295,9 +295,37 @@ export function Settings({
                       }`}
                     />
                   </div>
-                  <p className="pb-3 text-sm text-gray-500">
-                    Android may deliver it a few minutes late.
-                  </p>
+                  {/* Nothing while the phone has not answered: a guess drawn now would be
+                      swapped for the real answer a moment later, in front of the person. */}
+                  {reminder.punctuality === 'unknown' ? null : reminder.punctuality ===
+                    'inexact' ? (
+                    // The same words as the offer that turned it on. Not "a few minutes
+                    // late": without the permission an inexact alarm has been measured
+                    // over an hour late on a phone left asleep.
+                    <p className="pb-3 text-sm text-gray-500">
+                      It arrives around this time. Android picks the exact moment.
+                    </p>
+                  ) : reminder.punctuality === 'exact' ? (
+                    <p className="pb-3 text-sm text-gray-500">
+                      Android may deliver it a few minutes late.
+                    </p>
+                  ) : (
+                    <>
+                      {/* Two sentences and a row rather than a dialog: the permission is
+                          granted on a screen that belongs to the phone, so all the app can
+                          do is say what is happening and open the door to it. The row goes
+                          away by itself when the person comes back having granted it. */}
+                      <p className="text-sm text-gray-500">
+                        Android may send this an hour or more late, unless Daylo is allowed to
+                        remind you on time.
+                      </p>
+                      <GoRow
+                        label="Allow on-time reminders"
+                        onClick={() => void reminder.askForTime()}
+                        testId="reminder-exact"
+                      />
+                    </>
+                  )}
                 </div>
               </div>
               {reminder.failure === null ? null : (
@@ -332,7 +360,6 @@ export function Settings({
             {updates.supported ? (
               <SwitchRow
                 label="Check for new versions"
-                under="Asks GitHub. Nothing about you."
                 checked={updatesEnabled}
                 testId="updates-switch"
                 onChange={setUpdatesEnabled}
@@ -465,8 +492,21 @@ function FeedbackRow({ onFeedback }: { onFeedback: () => void }) {
     >
       <span className="min-w-0">
         <span className="block">Send feedback</span>
+        {/* Two sentences for one row, because the row does two different things and the
+            line under it was true in neither. In the application it opens the question,
+            where the star is sent the instant it is pressed: there is no draft and no
+            Send for it, the tap is the answer. "Only what you type, and only when you
+            press Send" told somebody their press was private when it was not, which is
+            the kind of sentence that costs more than saying nothing would have. In a
+            browser the row is the mailto it has always been, and there Daylo really does
+            send nothing: the mail client does, when that person sends it.
+
+            One sentence covering both would have to be vague enough to be useless in
+            each, so there are two and a test says they differ. */}
         <span className="mt-0.5 block text-sm text-gray-500">
-          Only what you type, and only when you press Send.
+          {isTauri()
+            ? 'A star is sent the moment you press it. What you write is sent when you press Send.'
+            : 'This opens your email. Daylo sends nothing itself.'}
         </span>
       </span>
       <ChevronRightIcon className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />

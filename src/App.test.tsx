@@ -3,9 +3,47 @@ import { act, render, screen, waitForElementToBeRemoved } from '@testing-library
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import { useCalendarStore } from './store'
+import { useRescueStore } from './store/rescue'
 import { formatDate } from './lib/dates'
 
 const NOW = '2026-09-01T00:00:00.000Z'
+
+/**
+ * The failure that used to have no screen.
+ *
+ * App returns the skeleton while `_hasHydrated` is false, and hydration throwing leaves it
+ * false for ever: zustand calls the rehydrate callback with no state, so nothing ever sets
+ * it. The result was a loading screen that never finished, with no header, so no Settings,
+ * so no Export, over data that was sitting on the disk the whole time.
+ */
+describe('when the data will not open', () => {
+  beforeEach(() => {
+    useRescueStore.setState({ failure: null })
+  })
+
+  it('shows a way out instead of a skeleton that never finishes', () => {
+    useCalendarStore.setState({ _hasHydrated: false })
+    useRescueStore.setState({
+      failure: { reason: 'unreadable', raw: '{"state":{"logs":[truncated' },
+    })
+
+    render(<App />)
+
+    expect(screen.getByTestId('could-not-open')).toBeInTheDocument()
+    expect(screen.queryByTestId('app-skeleton')).not.toBeInTheDocument()
+  })
+
+  // Loading is not failing. A skeleton while hydration is still running is correct, and
+  // replacing it with an error would be the app panicking at its own startup.
+  it('still shows the skeleton while it is only loading', () => {
+    useCalendarStore.setState({ _hasHydrated: false })
+
+    render(<App />)
+
+    expect(screen.getByTestId('app-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('could-not-open')).not.toBeInTheDocument()
+  })
+})
 
 const remindersAvailable = vi.hoisted(() => vi.fn())
 const openMailto = vi.hoisted(() => vi.fn())
@@ -514,7 +552,9 @@ describe('the check-in in settings', () => {
 })
 
 // Two moments, because two kinds of device. A phone is closed and opened; a desktop is
-// left running for days and only the window coming back says a new day has started.
+// left running for days and only the window coming back says somebody is there again. A
+// second ask on the same day is refused by sendCheckinIfDue itself; App.newDay.test.tsx
+// runs the real one to count what leaves the device.
 describe('when the daily check-in is attempted', () => {
   it('asks once the store is there and the app can send', async () => {
     checkinFields.mockResolvedValue({ version: '1.3.0', os: 'linux', source: 'deb' })
@@ -531,17 +571,24 @@ describe('when the daily check-in is attempted', () => {
     expect(sendCheckinIfDue).not.toHaveBeenCalled()
   })
 
-  it('asks again when the window comes back', async () => {
-    checkinFields.mockResolvedValue({ version: '1.3.0', os: 'linux', source: 'deb' })
-    render(<App />)
-    await act(async () => {})
-    sendCheckinIfDue.mockClear()
+  it('asks again when the window comes back on a new day', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date(2026, 10, 13, 21, 0))
+      checkinFields.mockResolvedValue({ version: '1.3.0', os: 'linux', source: 'deb' })
+      render(<App />)
+      await act(async () => {})
+      sendCheckinIfDue.mockClear()
 
-    await act(async () => {
-      document.dispatchEvent(new Event('visibilitychange'))
-    })
+      vi.setSystemTime(new Date(2026, 10, 14, 8, 30))
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
 
-    expect(sendCheckinIfDue).toHaveBeenCalled()
+      expect(sendCheckinIfDue).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

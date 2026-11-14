@@ -3,6 +3,102 @@
 What changed in each release, for the people who use Daylo. Earlier versions are not
 listed: this file starts at 1.1.2, when the first change worth warning about arrived.
 
+## 1.5.3
+
+**On Android, the button that offers a new version now downloads Daylo itself.** It used
+to open the Daylo website, where the one file for your phone sits among the ones for
+Windows, Mac and Linux, and finding it was your errand. Now the download starts straight
+away, and it is the version the message just named rather than whatever happens to be
+newest that minute.
+
+## 1.5.2
+
+**With the anonymous check-in off, Daylo now sends nothing at all until you answer its
+question.** After a week of use it asks once how things are going, and that question used
+to report its own arrival the moment it appeared, before anybody had touched it. It carried no
+number and nothing about you, but it was still a connection to our server from a copy that
+had been told it would make none. Your answers still travel if you give them: a star when
+you press it, and what you write when you send it. Nothing else does.
+
+**Send feedback now says what pressing a star actually does.** It said "Only what you type,
+and only when you press Send", and in the app that was not true: the star is sent the
+moment you press it, with no draft and no Send button of its own. On the website the same
+row opens your email and Daylo sends nothing itself. Each one says its own thing now.
+
+**If Daylo cannot open your data, it now says so and offers you a copy of it.** Until now
+it showed the loading screen and stayed there, with no menu, so no way to export and no way
+to know anything had happened, while everything you had tracked sat on the device
+untouched. There is a screen now. It says your data is still there, and it hands you the
+file exactly as it is, which is the thing to keep and the thing to send us.
+
+**Restoring a backup brings your activities back exactly as you wrote them.** Daylo used to
+rewrite them on the way in: a name like "Read <10 pages>" came back as "Read", "Peso <->
+medidas" lost its middle, and "Gym <3" turned into something with an ampersand in it. It
+only ever happened when restoring, which is the one moment you are counting on nothing
+changing. And a long name used to stop the whole file loading, so a backup Daylo itself had
+written could be refused. Names are capped where you type them now instead.
+
+**On Android, deleting your last activity now takes the daily reminder down with it.** It
+was meant to, and it never did: Daylo asked the phone what was scheduled before cancelling,
+the phone answered with an empty list whatever was really set, and so nothing was
+cancelled. The reminder went on arriving every night over an app with nothing left in it.
+
+**Importing a backup can be done with the keyboard.** The place you drop a file could only
+be reached by clicking it: with a keyboard, or with a screen reader, Import opened and
+there was nothing to press but Cancel. It is an ordinary file control now, so Tab reaches
+it and Enter opens the chooser.
+
+## 1.5.1
+
+**On Android, Daylo can now tell you when your reminder will not arrive at the time you
+set it for, and take you to where that is changed.** Android decides when an app may wake
+a sleeping phone, and unless it is allowed to, a reminder set for nine in the evening can
+turn up an hour or more later. The reminder itself has not changed and is still set the
+moment you turn it on. What is new is that the settings screen says so when it applies,
+with one row that opens the phone's own "Alarms & reminders" screen, and the row goes away
+once you have been there.
+
+**On Android, a daily reminder now behaves the same on its tenth day as on its first.**
+It was set once with permission to wake a sleeping phone, and every day after that it was
+quietly put back without it, so the first reminder could arrive while the phone was idle
+and the later ones waited until it was picked up. Nothing you set asked for that. Both are
+now scheduled the same way.
+
+**The number shown under "What gets sent" now says when it is only an example.** With the
+daily check-in off there is no number, and Daylo filled that line with one that belongs to
+nobody so you could see the shape of the message. It did not say so, which left the panel
+telling you the one thing that is not true about it. It sends nothing while the check-in
+is off, and the line now says the number is only an example.
+
+## 1.5.0
+
+**On Android, the check-in now says how your copy was installed.** The settings sheet shows
+the word it sends, under What gets sent, so you can see which one yours is. It still says
+nothing about you: everyone who installed the same way sends the same word.
+
+**After you answer "How is it going?", Daylo now leaves you an address.** One line, under
+the note about what gets sent: write to us if you want to tell us how you use it. It is
+there whatever you pressed, because the people we hear from least are the ones who did not
+love it. On a copy installed from the Microsoft Store there is also a line offering to rate
+Daylo there, once, and it appears whatever you pressed too.
+
+**The Android app downloaded from the site now tells you when a newer Daylo is out.** It
+shows the same quiet card the desktop shows, in the same place, with one button that opens
+the download. Nothing installs itself: Android asks you whether to update when you open the
+file, and your activities stay where they are. Like on the desktop, the check can be turned
+off in Settings, it asks GitHub and not us, and it carries nothing about you.
+
+**The list of checksums published with each release is now correct for every file.** One
+line, for the small file Daylo reads to find out a new version is out, described the
+previous version, so checking every file at once reported one failure. The files you
+download were always correct.
+
+**If you press the wrong star, press another one: the last one you press is your answer.**
+Daylo asks how it is going just after you close a day, and the stars come up over the
+calendar, so a press meant for another day could answer a question you had not read, and
+there was no way back from it. A second press now replaces the first. The stars also take
+no press at all while the question is still appearing.
+
 ## 1.4.2
 
 **The day sheet slides in and out again.** Tapping a day put the sheet on the screen

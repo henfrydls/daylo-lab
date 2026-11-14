@@ -1,7 +1,30 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useCalendarStore } from '../store'
-import { disableReminder, enableReminder, formatReminderTime } from '../lib/reminders'
+import {
+  askForExactAlarms,
+  disableReminder,
+  enableReminder,
+  EXACT_ALARMS_DECLARED,
+  exactAlarmsAllowed,
+  formatReminderTime,
+} from '../lib/reminders'
 import { useToast } from '../components/ui'
+
+/**
+ * How close to its time the reminder will arrive, which is the one thing the screen needs
+ * to know to decide what to say under it.
+ *
+ * - `inexact`: this build does not ask Android for exact alarms at all, so Android always
+ *   picks the moment and there is nothing to offer. See EXACT_ALARMS_DECLARED.
+ * - `exact`: it asks, and the phone allows it, or the phone could not be asked.
+ * - `denied`: it asks, and the phone says no. It still arrives, later, and the screen says
+ *   so and offers the way to change it.
+ * - `unknown`: it asks, and the phone has not answered yet, or the reminder is off and
+ *   nothing has been asked. The screen says nothing about timing rather than guess: a
+ *   guess of `exact` showed "a few minutes late" to a phone that had refused, and then
+ *   swapped it for the warning a moment later.
+ */
+export type Punctuality = 'inexact' | 'exact' | 'denied' | 'unknown'
 
 interface DailyReminder {
   enabled: boolean
@@ -13,6 +36,13 @@ interface DailyReminder {
   busy: boolean
   /** What the phone said when it refused, when it said anything. */
   failure: string | null
+  /** How close to its time it will arrive. One answer, so the screen decides nothing. */
+  punctuality: Punctuality
+  /**
+   * Open the phone's own screen where arriving on time is allowed. Does nothing in a build
+   * without EXACT_ALARMS_DECLARED, where that screen does not list Daylo.
+   */
+  askForTime: () => Promise<void>
   turnOn: (hour: number, minute: number) => Promise<boolean>
   turnOff: () => Promise<void>
   changeTime: (hour: number, minute: number) => void
@@ -38,6 +68,66 @@ export function useDailyReminder(): DailyReminder {
   const { showToast } = useToast()
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  // The phone's last answer, or null while there is none: before the first answer comes
+  // back, and while the reminder is off.
+  const [exactAllowed, setExactAllowed] = useState<boolean | null>(null)
+
+  // Only while the reminder is on: there is nothing to say about the punctuality of a
+  // reminder nobody has set, and turning it on re-runs this because `enabled` changes.
+  //
+  // Asked again whenever the app comes back to the front, because the permission is
+  // granted on a screen that belongs to the phone and not to Daylo. Coming back is the
+  // only moment the app can learn the answer changed, and without it the sheet would go
+  // on offering a fix for something already fixed.
+  //
+  // Not at all in a build that does not declare the permission: there the answer is
+  // always no, and an answer that is always no would put up an offer nobody can take.
+  useEffect(() => {
+    if (!enabled || !EXACT_ALARMS_DECLARED) return
+    let listening = true
+    // The answer before this one, for this run of the effect only. The state holds the
+    // same thing for the screen, but this callback would read the state of the render it
+    // was made in, so the comparison keeps its own copy. Starting empty on every run means
+    // the first answer after turning the reminder on is never taken for a change: turning
+    // it on has just scheduled it.
+    let previous: boolean | null = null
+    const ask = () => {
+      void exactAlarmsAllowed().then((allowed) => {
+        if (!listening) return
+        // Granting the permission does not touch an alarm that is already pending.
+        // Measured on a phone on 2026-10-13: after the permission was given, the alarm
+        // set before it was still RTC_WAKEUP with a window of about an hour, and only
+        // became exact when the switch was turned off and on by hand. So the one night
+        // the person went to the trouble of fixing this was still the night it could
+        // arrive late. Setting it again here is what makes the permission take effect
+        // when it is given rather than the next time something else reschedules.
+        //
+        // Only on the change, and only in that direction. Coming back to the front is an
+        // ordinary thing that happens many times a day, and replacing a pending alarm on
+        // each of them would be churn for nothing.
+        const justGranted = previous === false && allowed
+        previous = allowed
+        setExactAllowed(allowed)
+        if (justGranted) {
+          // From the store rather than from this closure, which belongs to the render
+          // where the effect was set up and would hold the time as it was then.
+          const { reminderHour, reminderMinute } = useCalendarStore.getState()
+          void enableReminder(reminderHour, reminderMinute)
+        }
+      })
+    }
+    ask()
+    const onReturn = () => {
+      if (document.visibilityState === 'visible') ask()
+    }
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      listening = false
+      document.removeEventListener('visibilitychange', onReturn)
+      // Turned off, or gone: the next time it is on, nothing is known until it is asked.
+      setExactAllowed(null)
+    }
+  }, [enabled])
 
   // Changes take effect as they are made, the way a phone's own settings behave.
   const turnOn = async (nextHour: number, nextMinute: number): Promise<boolean> => {
@@ -56,6 +146,12 @@ export function useDailyReminder(): DailyReminder {
         showToast('Daylo could not set the reminder on this phone', 'error')
         setFailure(reason ?? 'the phone did not say why')
       }
+      // A refusal can come while it was on, with a new time picked after the permission
+      // was taken away. The switch goes off, and the alarm already on the phone goes with
+      // it: the plugin restores what it scheduled after a restart, so one left behind would
+      // ring under a switch that says off. A cancel that fails is not a reason to leave the
+      // switch on.
+      await disableReminder().catch(() => {})
       setReminder(false, nextHour, nextMinute)
       return false
     } finally {
@@ -89,6 +185,14 @@ export function useDailyReminder(): DailyReminder {
     setReminder(false, nextHour, nextMinute)
   }
 
+  // Nothing is awaited beyond the screen opening, and nothing is re-asked here: whatever
+  // the person decides over there arrives through the effect above when they come back.
+  const askForTime = async (): Promise<void> => {
+    // The screen it opens does not list Daylo when the permission is not declared.
+    if (!EXACT_ALARMS_DECLARED) return
+    await askForExactAlarms()
+  }
+
   return {
     enabled,
     hour,
@@ -96,6 +200,14 @@ export function useDailyReminder(): DailyReminder {
     at: formatReminderTime(hour, minute),
     busy,
     failure,
+    punctuality: !EXACT_ALARMS_DECLARED
+      ? 'inexact'
+      : exactAllowed === null
+        ? 'unknown'
+        : exactAllowed
+          ? 'exact'
+          : 'denied',
+    askForTime,
     turnOn,
     turnOff,
     changeTime,

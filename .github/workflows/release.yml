@@ -44,6 +44,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Before anything is public. Every other job waits for this one, so a refusal here
+      # stops the whole tag in seconds with nothing published. The same check runs again on
+      # the merged Android manifests after the Android build, for a permission a library
+      # brings in; by then the release exists, which is why the common case, the switch and
+      # the hand-written manifest disagreeing, is asked here first.
+      #
+      # Node only: the script reads two files and imports nothing outside Node itself.
+      #
+      # To see it red on a lab tag without touching what the later check reads: move the
+      # uses-permission line out of src-tauri/gen/android/app/src/main/AndroidManifest.xml
+      # into a new src-tauri/gen/android/app/src/release/AndroidManifest.xml. The release
+      # build still merges the permission in, so the later check would agree, but this one
+      # reads the main manifest and stops the tag. (It never gets as far as the later one:
+      # every job needs this one.)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: The Android manifest agrees with EXACT_ALARMS_DECLARED
+        run: node scripts/check-exact-alarm.js src-tauri/gen/android/app/src/main/AndroidManifest.xml
+
       - name: Create it, or find the one an earlier attempt made
         id: make
         env:
@@ -234,6 +256,52 @@ jobs:
         run: npx tauri android build --apk --aab --target aarch64
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+
+      # The same check Build Check (Android) runs on a pull request, on the build that is
+      # actually published: the release variant's merged manifests, the bundle one that goes
+      # into the AAB Play is given and the packaged one that goes into the APK. Here and not
+      # only in the pull request because a pull request builds debug, and because this is
+      # the last moment before anything is signed or uploaded: past it, a declaration Play
+      # asks to be justified is already in the release.
+      #
+      # Both have to be found. A path AGP renamed holds no permission either, and read as
+      # "not declared" it would agree with EXACT_ALARMS_DECLARED being off.
+      #
+      # The hand-written manifest has already been checked in create-release, before the
+      # release existed. What only this step can see is a permission a library adds in the
+      # merge, and Build Check (Android) asks the same of every pull request on its debug
+      # build, so reaching this step red should be rare.
+      #
+      # If it is red, the release is already public: create-release made it, the desktop
+      # jobs upload into it, and updater-manifest waits only for them, so latest.json goes
+      # out without an APK or an AAB, and an Android copy told about this version would be
+      # sent to a file that is not there. Turn the release back into a draft at once, which
+      # takes it out of /releases/latest so every copy goes back to the version before:
+      #   gh release edit <tag> --draft=true
+      # then fix the manifest and tag again, after deleting the draft and its tag with
+      #   gh release delete <tag> --cleanup-tag --yes
+      #
+      # Only a tag runs this. To see it red on its own, the earlier check has to pass: take
+      # the permission out in a manifest only the release build merges, a new
+      # src-tauri/gen/android/app/src/release/AndroidManifest.xml with
+      #   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
+      #       tools:node="remove" />
+      # (and the tools namespace on its <manifest>). The main manifest still declares it,
+      # so create-release agrees, and this step names both merged files as declaring none.
+      - name: The release manifests agree with EXACT_ALARMS_DECLARED
+        run: |
+          set -uo pipefail
+          shopt -s nullglob globstar
+          dir=src-tauri/gen/android/app/build/intermediates
+          bundle=( "$dir"/bundle_manifest/*Release/**/AndroidManifest.xml )
+          packaged=( "$dir"/packaged_manifests/*Release/**/AndroidManifest.xml )
+          if [ ${#bundle[@]} -eq 0 ] || [ ${#packaged[@]} -eq 0 ]; then
+            echo "::error::The release manifests are not where this step looks for them, so"
+            echo "::error::nothing was checked. Where AGP writes them now:"
+            find "$dir" -name AndroidManifest.xml 2>/dev/null || true
+            exit 1
+          fi
+          node scripts/check-exact-alarm.js "${bundle[@]}" "${packaged[@]}"
 
       - name: Sign APK
         env:
@@ -594,11 +662,29 @@ jobs:
     steps:
       - name: Check build results
         run: |
-          if [ "${{ needs.build.result }}" == "success" ] && [ "${{ needs.build-android.result }}" == "success" ]; then
+          # updater-manifest is read here too, and it was the one missing. It is the job
+          # that writes latest.json, which is the only file every installed copy ever asks
+          # for: without it they all go on being told they are up to date, however many
+          # installers the release page shows. It can refuse on its own terms (a release
+          # note left over from the previous version, a platform that built without a
+          # .sig), and when it did, this step printed "All builds completed successfully!"
+          # over the top of it, because it only read the two build jobs.
+          #
+          # The step below still runs, by design: it carries 'if: !cancelled()' so the
+          # platforms that DID build keep their stable named copies and their line in
+          # SHA256SUMS.txt. What changes here is only what the summary claims.
+          if [ "${{ needs.build.result }}" == "success" ] \
+            && [ "${{ needs.build-android.result }}" == "success" ] \
+            && [ "${{ needs.updater-manifest.result }}" == "success" ]; then
             echo "All builds completed successfully!"
             echo "Release artifacts have been uploaded to: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           else
-            echo "Some builds failed. Check the individual build logs for details."
+            echo "Builds: ${{ needs.build.result }}, Android: ${{ needs.build-android.result }}, update manifest: ${{ needs.updater-manifest.result }}."
+            if [ "${{ needs.updater-manifest.result }}" != "success" ]; then
+              echo "::error::latest.json was not published, so no installed copy will be"
+              echo "::error::offered this release however complete the release page looks."
+            fi
+            echo "Check the individual job logs for details."
             exit 1
           fi
 
@@ -797,3 +883,97 @@ jobs:
             echo "\`SHA256SUMS.txt\` covers $(grep -c . SHA256SUMS.txt) files, with the hashes"
             echo "the releases API publishes itself."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The Snap Store. Built from the .deb this release already published, and pushed to the
+  # edge channel only when there are credentials to push with.
+  #
+  # Deliberately NOT in release-summary's needs, and not an asset on the release page.
+  # A .snap is installed from the store, the same way the .aab is handed to Play rather
+  # than published next to things people can open. Keeping it out also keeps it out of
+  # SHA256SUMS.txt, which describes what is on the release page, and out of the ordering
+  # that scripts/check-sums-come-last.sh exists to protect.
+  snap:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    name: Build (snap)
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # From the release rather than from a workflow artifact: the matrix hands its
+      # installers straight to tauri-action, which uploads them to the release page, so
+      # that is where the .deb for this tag is.
+      - name: Take the Debian package from this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "${{ github.ref_name }}" --pattern '*_amd64.deb' --dir linux-build
+          deb="$(find linux-build -name '*.deb' -print -quit)"
+          if [ -z "$deb" ]; then
+            echo "::error::This release has no amd64 .deb, and the snap is built from it."
+            exit 1
+          fi
+          cp "$deb" daylo.deb
+          ls -l daylo.deb
+
+      - name: Build the snap
+        id: build
+        uses: snapcore/action-build@v1
+
+      - name: Say what is inside it
+        run: |
+          set -euo pipefail
+          unsquashfs -d unpacked "${{ steps.build.outputs.snap }}"
+          for path in usr/bin/Daylo usr/share/applications/daylo.desktop meta/snap.yaml; do
+            if [ ! -e "unpacked/$path" ]; then
+              echo "::error::$path is not in the snap."
+              exit 1
+            fi
+          done
+          cat unpacked/meta/snap.yaml
+
+      # The secret cannot be read in a job level `if`: the secrets context is not available
+      # there. So the question is asked in a step, and the answer is a word rather than the
+      # credential, which is never printed or written anywhere.
+      - name: Are there credentials to publish with
+        env:
+          CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          if [ -n "${CREDENTIALS:-}" ]; then
+            echo "CAN_PUBLISH=yes" >> "$GITHUB_ENV"
+          else
+            echo "CAN_PUBLISH=no" >> "$GITHUB_ENV"
+            echo "::notice::No SNAPCRAFT_STORE_CREDENTIALS secret is set, so the snap was"
+            echo "::notice::built and kept as an artifact and nothing was pushed to the"
+            echo "::notice::store. Generate one with 'snapcraft export-login' and add it to"
+            echo "::notice::the repository secrets to turn this on. This is not a failure:"
+            echo "::notice::the release does not depend on the Snap Store."
+          fi
+
+      # edge and not stable. The name 'daylo' is registered but its registration is still
+      # in manual review, and a tag should not be what decides a copy reaches the public.
+      # Promoting to stable is a deliberate act in the store, by a person.
+      - name: Push it to the edge channel
+        if: env.CAN_PUBLISH == 'yes'
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: edge
+
+      # Ninety days, like the .aab, and for the same reason: longer than any store review
+      # takes, and it is the only copy of this build outside the store.
+      - name: Keep the snap
+        uses: actions/upload-artifact@v4
+        with:
+          name: daylo-snap
+          path: ${{ steps.build.outputs.snap }}
+          retention-days: 90
+          if-no-files-found: error

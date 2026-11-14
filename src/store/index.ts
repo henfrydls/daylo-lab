@@ -1,10 +1,19 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 import type { Activity, ActivityLog } from '../types'
-import { formatDate, generateId } from '../lib/dates'
+import { formatDate, generateId, parseDateString } from '../lib/dates'
+import { firstFreeColor } from '../lib/colors'
 // Import estatico a proposito: Toast.tsx ya importa este modulo de forma estatica,
 // asi que un import() dinamico aqui no partiria el bundle -- solo retrasaria el aviso.
 import { useToastStore } from './toast'
+import { useRescueStore, whatIsOnDisk } from './rescue'
+
+/**
+ * Where everything lives. Named rather than written twice: the rescue path reads the same
+ * key straight off the disk, and two spellings of it would mean the screen that hands back
+ * your data could hand back somebody else's nothing.
+ */
+export const STORAGE_KEY = 'simple-calendar-storage'
 
 type ViewType = 'year' | 'month'
 type ViewTransitionDirection = 'drill-down' | 'drill-up' | null
@@ -94,11 +103,11 @@ const createDeferredStorage = (): StateStorage => {
       // Cancel any existing scheduled write
       cancelScheduledWrite()
 
-      // El diferido coalesce escrituras a localStorage: la durabilidad no depende de
-      // esta ventana, sino del flush de 'pagehide' y visibilitychange de arriba, asi que
-      // conviene que sea holgada. Con una ventana corta cada clic de navegacion
-      // (cambiar de mes, de vista, elegir un dia) acaba en una escritura propia, porque
-      // partialize tambien persiste esos campos.
+      // The deferral coalesces writes to localStorage. Durability does not depend on this
+      // window but on the 'pagehide' and visibilitychange flush above, so it can be
+      // generous. With a short one every navigation tap (another month, the other view, a
+      // day) ends in a write of its own: persist writes on every set(), even one that only
+      // changes fields partialize leaves out.
       //
       // Ojo: esto NO ahorra serializacion. createJSONStorage hace el JSON.stringify de
       // forma sincrona en cada set(), antes de llamar a este adaptador; lo que se
@@ -246,7 +255,11 @@ interface CalendarState {
   updatesEnabled: boolean
 
   // Activity actions
-  addActivity: (name: string, color: string) => void
+  /**
+   * Without a color, the activity gets the first one nobody wears yet, the same one the
+   * forms offer. The rule lives here so that any way of making an activity follows it.
+   */
+  addActivity: (name: string, color?: string) => void
   updateActivity: (id: string, updates: Partial<Pick<Activity, 'name' | 'color'>>) => void
   deleteActivity: (id: string) => void
 
@@ -261,6 +274,11 @@ interface CalendarState {
   setYearMode: (mode: 'all' | 'byActivity') => void
   setSelectedMonth: (month: number) => void
   navigateToMonth: (year: number, month: number) => void
+  /**
+   * The day changed with the app open: Month, on the month that holds it, with no sheet.
+   * Given the day that was applied, `YYYY-MM-DD`, so there is one answer to what it is.
+   */
+  startNewDay: (day: string) => void
 
   // Reminder
   setReminder: (enabled: boolean, hour?: number, minute?: number) => void
@@ -292,26 +310,43 @@ interface CalendarState {
   getLogsForActivity: (activityId: string) => ActivityLog[]
 }
 
+const OPENED_AT = new Date()
+
+/**
+ * Where somebody is, as opposed to what they have. None of these is written to disk, and
+ * merge drops each of them on the way in, because every copy installed before 1.5.3 has
+ * them stored. One list for both halves, so the next place added to the store cannot be
+ * left out of one of them; `src/store/open-on-today.test.ts` checks both against it.
+ */
+export const WHERE_SOMEBODY_IS = [
+  'selectedDate',
+  'selectedMonth',
+  'selectedYear',
+  'currentView',
+] as const satisfies readonly (keyof CalendarState)[]
+
 export const useCalendarStore = create<CalendarState>()(
   persist(
     (set, get) => ({
       activities: [],
       logs: [],
-      selectedYear: new Date().getFullYear(),
+      // One reading of the clock for both, so a store built in the last instant of
+      // December cannot come up with this year's December's month and next year's year.
+      selectedYear: OPENED_AT.getFullYear(),
       selectedDate: null,
       // Month, everywhere. The year view answers "how did the year go"; the month view is
       // where a person ticks today off, which is what they open the app to do. This used
       // to depend on the window being narrower than 640px, so the same person got a
       // different first screen on their phone and on their laptop.
       //
-      // Only a fresh install sees it. currentView is persisted, and anything that touches
-      // the store writes the whole persisted slice, so anyone who has ever used Daylo
-      // already has a view stored and keeps it. That is deliberate: changing it for them
-      // would overrule a choice some of them made on purpose, and there is no way to tell
-      // those apart from the ones who never touched the toggle.
+      // And every launch sees it, not only a fresh install. The view used to be kept, on
+      // the grounds that some people chose the year on purpose; what it did in practice was
+      // bring back to the year anybody who had tapped Year once, or swiped sideways on a
+      // phone without meaning to, where there is no Today bar and no obvious way to tick
+      // today off. The year is one tap away for whoever wants it.
       currentView: 'month' as ViewType,
       yearMode: 'all' as const,
-      selectedMonth: new Date().getMonth(),
+      selectedMonth: OPENED_AT.getMonth(),
       _hasHydrated: false,
       _viewTransitionDirection: null as ViewTransitionDirection,
 
@@ -394,7 +429,7 @@ export const useCalendarStore = create<CalendarState>()(
         const newActivity: Activity = {
           id: generateId(),
           name,
-          color,
+          color: color ?? firstFreeColor(get().activities.map((a) => a.color)),
           createdAt: now,
           updatedAt: now,
         }
@@ -499,6 +534,24 @@ export const useCalendarStore = create<CalendarState>()(
           _viewTransitionDirection: 'drill-down',
         }),
 
+      // Where somebody was yesterday is not where they want to be today, and yesterday's
+      // sheet left open would let them tick yesterday believing it was today. The new day
+      // starts where opening the app starts: Month, on the month that holds today, with no
+      // sheet. An app that stays alive overnight, in the background on Android or open on a
+      // desktop, is not treated differently from one opened this morning. With no drill
+      // animation: nobody drilled anywhere. The session flags are not touched: they pair
+      // with state in App that does not start again with the day.
+      startNewDay: (day) => {
+        const date = parseDateString(day)
+        set({
+          selectedYear: date.getFullYear(),
+          selectedMonth: date.getMonth(),
+          selectedDate: null,
+          currentView: 'month',
+          _viewTransitionDirection: null,
+        })
+      },
+
       getLogsForDate: (date) => {
         return get().logs.filter((l) => l.date === date && l.completed)
       },
@@ -508,16 +561,25 @@ export const useCalendarStore = create<CalendarState>()(
       },
     }),
     {
-      name: 'simple-calendar-storage',
+      name: STORAGE_KEY,
       storage: createJSONStorage(() => createDeferredStorage()),
+      // Where somebody was is not kept, and the four missing names are the whole of this
+      // decision: `selectedDate`, `selectedMonth`, `selectedYear` and `currentView`.
+      //
+      // Daylo is for today, and it used to open wherever it was left. Somebody who looked
+      // at March in March came back in November and was shown March, with today a swipe
+      // away and nothing on the screen saying so; the day sheet came back open too, over a
+      // day that had stopped being the day. The view was the same kind of thing: one tap on
+      // Year, or one sideways swipe on a phone, and every launch after that opened on
+      // twelve cards with no Today bar. The defaults are today's month, so leaving these
+      // out is the whole of the fix.
+      //
+      // What is kept is what is a preference rather than a place: how somebody likes the
+      // year read.
       partialize: (state) => ({
         activities: state.activities,
         logs: state.logs,
-        selectedYear: state.selectedYear,
-        selectedDate: state.selectedDate,
-        currentView: state.currentView,
         yearMode: state.yearMode,
-        selectedMonth: state.selectedMonth,
         reminderEnabled: state.reminderEnabled,
         reminderHour: state.reminderHour,
         reminderTimeChosen: state.reminderTimeChosen,
@@ -549,14 +611,46 @@ export const useCalendarStore = create<CalendarState>()(
       merge: (persisted, current) => {
         if (persisted == null) return { ...current, _checkinStart: 'new' }
 
-        const stored = persisted as Partial<CalendarState>
+        // Where somebody was is dropped on the way in, not only left out on the way out.
+        // Every copy already installed has these four on disk from before this change, and
+        // partialize only decides what is written: without this, the first launch after
+        // updating would still open on March, or on the year, and the second one would be
+        // the fixed one. The fix that works on the next launch and not on this one is the
+        // fix nobody sees.
+        const stored = { ...(persisted as Partial<CalendarState>) }
+        for (const place of WHERE_SOMEBODY_IS) delete stored[place]
         return {
           ...current,
           ...stored,
           _checkinStart: 'checkinEnabled' in stored ? 'decided' : 'update',
         }
       },
-      onRehydrateStorage: () => (state) => {
+      /**
+       * The second argument is the one that was being dropped, and dropping it was the
+       * whole of the bug.
+       *
+       * zustand calls this with `(undefined, error)` when hydration throws, which a
+       * truncated or otherwise unparseable value in storage does, and a browser with site
+       * data blocked does too. The old body was `state?.setHasHydrated(true)`: the `?.`
+       * quietly swallowed exactly that case, `_hasHydrated` stayed false, and App returned
+       * the loading skeleton for ever. No header, no Settings, no Export, over data still
+       * sitting on the disk.
+       *
+       * Nothing here may touch `useCalendarStore`. This runs from inside `create()`, so
+       * that const is still in its temporal dead zone and naming it would throw from the
+       * handler for a failure. The rescue store is separate for that reason among others.
+       *
+       * And nothing here writes. A device that could not be read is the last device that
+       * should be written to: whatever is there is the only copy, and the screen this
+       * raises exists to get it off intact.
+       */
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          useRescueStore
+            .getState()
+            .couldNotOpen(whatIsOnDisk(() => localStorage.getItem(STORAGE_KEY)))
+          return
+        }
         state?.setHasHydrated(true)
       },
     }

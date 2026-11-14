@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `eb71f8a`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `f02569f`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -74,12 +74,17 @@ already did.
 
 # The round
 
-Nothing to install this time. This round is for the release workflow, which no pull request
-runs: it now writes SHA256SUMS after the update manifest, so that the list describes every
-file of the release, `latest.json` included.
+Nothing to install this time. This round is for two things only a tag runs.
 
-Growth downloads every asset of the **v1.4.14** release and checks each one against
-SHA256SUMS. Henfry has nothing to do in this round.
+1. The exact-alarm check that now runs inside "Make the release", before the release
+   exists, and the later one that reads the manifests Gradle merged for the signed APK
+   and AAB.
+2. The patched notification plugin, in a signed release build: the reminder is stored
+   so that a restart or an update of the app can put it back.
+
+Growth tags **v1.5.3**, which must come out green, and a second tag carrying a manifest
+that disagrees with the switch, which must stop in "Make the release" without publishing
+anything. Henfry has nothing to do in this round.
 
 # Publishing a lab release
 

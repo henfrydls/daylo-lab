@@ -98,6 +98,24 @@ describe('whether it looks at all', () => {
     expect(result.current.supported).toBe(false)
   })
 
+  // The same, from a third store, and the one place where being wrong costs the most: a
+  // snap is mounted read-only, so an offer taken up here could not finish even if the
+  // Snap Store were not already refreshing the copy. Written as its own test rather than
+  // another word in the one above, because what is being watched is the hook and not the
+  // table it reads.
+  it('asks nothing and offers nothing inside a snap', async () => {
+    format = 'snap'
+    check.mockResolvedValue(anUpdate())
+
+    const { result } = renderHook(() => useUpdates())
+    await settle()
+
+    expect(check).not.toHaveBeenCalled()
+    expect(result.current.notice).toBeNull()
+    expect(result.current.waiting).toBeNull()
+    expect(result.current.supported).toBe(false)
+  })
+
   // Nothing patched this copy, so we do not know what it is. The menu entry goes with it:
   // a setting that cannot act on anything is a setting that lies about what it does.
   it('says nothing where nothing packaged this copy', async () => {
@@ -447,7 +465,7 @@ describe('asking is not installing', () => {
 
 describe('on a phone', () => {
   // The word is the difference: a desktop is sent to a page that asks which of eight
-  // files is theirs, and the landing's Android button hands over the one APK there is.
+  // files is theirs, while a phone is handed the one APK there is.
   it('tells a loose APK there is a newer one, and offers the download', async () => {
     source = 'apk'
     published = '1.5.0'
@@ -464,7 +482,11 @@ describe('on a phone', () => {
     })
   })
 
-  it('sends them to the page rather than installing anything', async () => {
+  // The file, not the page that lists eight of them. Until 1.5.3 this opened the landing,
+  // which on a phone asks somebody to know which file is theirs when there has only ever
+  // been one for them. The old test asserted `expect.anything()` as the address, so it
+  // would have passed on either behaviour and said nothing about which one shipped.
+  it('hands an APK the file itself, named after the version it just announced', async () => {
     source = 'apk'
     published = '1.5.0'
     const { result } = renderHook(() => useUpdates())
@@ -473,8 +495,13 @@ describe('on a phone', () => {
     act(() => result.current.act())
 
     await waitFor(() =>
-      expect(invoked).toHaveBeenCalledWith('plugin:opener|open_url', expect.anything())
+      expect(invoked).toHaveBeenCalledWith('plugin:opener|open_url', {
+        url: 'https://github.com/henfrydls/daylo/releases/download/v1.5.0/Daylo-android-arm64.apk',
+      })
     )
+    expect(invoked).not.toHaveBeenCalledWith('plugin:opener|open_url', {
+      url: 'https://daylo.henfrydls.com/#download',
+    })
   })
 
   // Play keeps its own copies current, exactly as the Microsoft Store does. Not a quieter

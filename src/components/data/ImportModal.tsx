@@ -4,6 +4,7 @@ import { useCalendarStore } from '../../store'
 import { parseImportFileWithValidation, mergeData } from '../../lib/dataExport'
 import type { Activity, ActivityLog } from '../../types'
 import type { ValidationError } from '../../lib/dataExport'
+import { count } from '../../lib/plural'
 
 interface ImportModalProps {
   isOpen: boolean
@@ -170,10 +171,10 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
     if (!parsedData) return ''
 
     if (importMode === 'replace') {
-      return `This will replace all your current data (${activities.length} activities, ${logs.length} logs) with the imported data (${parsedData.activities.length} activities, ${parsedData.logs.length} logs). This action cannot be undone.`
+      return `This will replace all your current data (${count(activities.length, 'activity', 'activities')}, ${count(logs.length, 'log', 'logs')}) with the imported data (${count(parsedData.activities.length, 'activity', 'activities')}, ${count(parsedData.logs.length, 'log', 'logs')}). This action cannot be undone.`
     }
 
-    return `This will merge ${parsedData.activities.length} activities and ${parsedData.logs.length} logs with your existing data. Duplicates will be skipped.`
+    return `This will merge ${count(parsedData.activities.length, 'activity', 'activities')} and ${count(parsedData.logs.length, 'log', 'logs')} with your existing data. Duplicates will be skipped.`
   }
 
   return (
@@ -230,14 +231,24 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
         }
       >
         <div className="space-y-6">
-          {/* Drop zone */}
-          <div
+          {/* A label and not a div, which is the whole of the fix.
+              It was a div with an onClick, carrying no role, no tabIndex and no key
+              handler, over an input that was `hidden`: display:none, so not focusable and
+              not in the accessibility tree either. Somebody on a keyboard or a screen
+              reader opened Import and found nothing to activate, with Cancel the only
+              enabled control. A backup matters on exactly one day, and on that day they
+              could not reach it.
+              Wrapping the input makes the browser do all of it: the whole zone stays
+              clickable, Tab reaches the input, Enter opens the picker because that is what
+              a focused file input does, and the words inside become its accessible name.
+              No roles, no key handlers, nothing to keep in step with native behaviour. */}
+          <label
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
             className={`
-              relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+              relative block border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+              focus-within:outline-none focus-within:ring-2 focus-within:ring-emerald-500
               transition-colors duration-200
               ${
                 isDragging
@@ -250,12 +261,15 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
               }
             `}
           >
+            {/* sr-only and not hidden: it has to stay focusable and stay in the
+                accessibility tree. The ring above is drawn on the zone instead, because
+                the input itself is a pixel nobody can see. */}
             <input
               ref={fileInputRef}
               type="file"
               accept=".json"
               onChange={handleFileChange}
-              className="hidden"
+              className="sr-only"
             />
 
             {parsedData ? (
@@ -300,7 +314,7 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
                 <p className="text-xs text-gray-400 mt-1">Supports JSON files only</p>
               </div>
             )}
-          </div>
+          </label>
 
           {/* Error message */}
           {error && (
@@ -352,13 +366,11 @@ export function ImportModal({ isOpen, onClose }: ImportModalProps) {
               <ul className="space-y-1 text-sm text-gray-600">
                 <li className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  {parsedData.activities.length}{' '}
-                  {parsedData.activities.length === 1 ? 'activity' : 'activities'}
+                  {count(parsedData.activities.length, 'activity', 'activities')}
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  {parsedData.logs.length}{' '}
-                  {parsedData.logs.length === 1 ? 'log entry' : 'log entries'}
+                  {count(parsedData.logs.length, 'log entry', 'log entries')}
                 </li>
               </ul>
             </div>

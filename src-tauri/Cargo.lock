@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "activity-tracker"
-version = "1.4.14"
+version = "1.5.3"
 dependencies = [
  "jni",
  "log",
@@ -4076,8 +4076,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01fc2c5ff41105bd1f7242d8201fdf3efd70749b82fa013a17f2126357d194cc"
+source = "git+https://github.com/henfrydls/plugins-workspace?rev=b044a952d5fd1cc96755b05658df395dde67d44e#b044a952d5fd1cc96755b05658df395dde67d44e"
 dependencies = [
  "log",
  "notify-rust",

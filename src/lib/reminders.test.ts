@@ -8,6 +8,8 @@ import {
   reconcileReminder,
   refreshReminder,
   remindersAvailable,
+  askForExactAlarms,
+  exactAlarmsAllowed,
 } from './reminders'
 
 const isPermissionGranted = vi.hoisted(() => vi.fn())
@@ -52,6 +54,12 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+// Measured on a phone on 2026-10-13: the alarm came out as origWhen=21:00:36, carrying the
+// seconds of the moment it was scheduled, so a reminder set for nine o'clock arrived 36
+// seconds into the minute. The plugin's Kotlin builds the next trigger from a calendar made
+// of *now* and overwrites only the fields it was given: it zeroes the milliseconds and
+// leaves the seconds alone (NotificationSchedule.kt, buildNextTriggerTime). Sending the zero
+// is what makes the time the time.
 describe('where reminders exist', () => {
   it('nowhere on the web', async () => {
     await expect(remindersAvailable()).resolves.toBe(false)
@@ -83,11 +91,11 @@ describe('turning the reminder on', () => {
     expect(scheduled()).toEqual({
       options: expect.objectContaining({
         id: REMINDER_ID,
-        // An interval matching hour and minute, which Android re-arms on its own and the
-        // plugin restores after a reboot. Not Schedule.at: with repeating it computes the
+        // An interval matching hour and minute, which the plugin re-arms each day and
+        // restores after a restart or an update. Not Schedule.at: with repeating it computes the
         // repeat gap as the time left until the first fire, so a reminder set at 20:00 for
         // 21:00 would repeat hourly.
-        schedule: { interval: { hour: 21, minute: 0 }, allowWhileIdle: true },
+        schedule: { interval: { hour: 21, minute: 0, second: 0 }, allowWhileIdle: true },
       }),
     })
   })
@@ -174,7 +182,26 @@ describe('turning it off', () => {
 })
 
 describe('when the last activity goes', () => {
-  it('takes the reminder down with it', async () => {
+  /**
+   * The case every real phone is in, and the one the old code could not act on.
+   *
+   * getPending reads the plugin's own store, and that store was only ever written by the
+   * Kotlin `batch` path. Daylo schedules through `notify`, which reaches `show`, and `show`
+   * wrote nothing, before the patched plugin in 1.5.3. So `pending()` answered `[]` on a
+   * phone with the reminder live and ringing every night, and the old condition read that
+   * as "nothing of ours is scheduled" and cancelled nothing. Somebody who deleted their
+   * last activity went on being asked how the day went, over an app with nothing left in it.
+   */
+  it('takes the reminder down even though the phone lists nothing', async () => {
+    pretendAndroid()
+    pending.mockResolvedValue([])
+
+    await reconcileReminder(0)
+
+    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+  })
+
+  it('takes it down when the phone does list it', async () => {
     pretendAndroid()
     pending.mockResolvedValue([{ id: REMINDER_ID, title: 'Daylo', schedule: {} }])
 
@@ -188,16 +215,36 @@ describe('when the last activity goes', () => {
 
     await reconcileReminder(3)
 
-    expect(pending).not.toHaveBeenCalled()
     expect(cancel).not.toHaveBeenCalled()
   })
 
-  // Reads what is really scheduled rather than trusting stored state: the phone's own
-  // settings can take notifications away behind the app's back.
-  it('cancels nothing when nothing of ours is scheduled', async () => {
+  /**
+   * It does not ask any more, and that is the change.
+   *
+   * By the time this runs there is nothing left to be reminded about, so taking the
+   * reminder down is the whole of what it came to do, whatever any list says. Cancelling
+   * one that was never scheduled costs nothing. Asking first only ever gave an answer that
+   * could talk it out of its own job, and on a real phone that is exactly what it did.
+   */
+  it('does not consult a list it cannot act on', async () => {
     pretendAndroid()
-    pending.mockResolvedValue([{ id: 99, title: 'Something else', schedule: {} }])
 
+    await reconcileReminder(0)
+
+    expect(pending).not.toHaveBeenCalled()
+    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+  })
+
+  // Nothing on this path may throw: it runs from a screen somebody is looking at, right
+  // after they deleted something.
+  it('does not throw when cancelling itself fails', async () => {
+    pretendAndroid()
+    cancel.mockRejectedValue(new Error('the plugin is not there'))
+
+    await expect(reconcileReminder(0)).resolves.toBeUndefined()
+  })
+
+  it('does nothing at all where there are no reminders', async () => {
     await reconcileReminder(0)
 
     expect(cancel).not.toHaveBeenCalled()
@@ -221,7 +268,7 @@ describe('re-arming at launch', () => {
     expect(scheduled()).toEqual({
       options: expect.objectContaining({
         id: REMINDER_ID,
-        schedule: { interval: { hour: 21, minute: 0 }, allowWhileIdle: true },
+        schedule: { interval: { hour: 21, minute: 0, second: 0 }, allowWhileIdle: true },
       }),
     })
   })
@@ -259,6 +306,90 @@ describe('re-arming at launch', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(refreshReminder(21, 0)).resolves.toBe(false)
+  })
+})
+
+/**
+ * A re-arm that set off at launch and arrives after something newer.
+ *
+ * Opening the app re-arms the reminder through a few round trips to the phone, and the
+ * person can act during them. Each test holds the re-arm's permission check open, lets the
+ * newer call in, and only then lets the re-arm go on, which is the order a slow phone puts
+ * them in.
+ */
+describe('a re-arm overtaken on its way', () => {
+  function heldOpen() {
+    let answer!: (granted: boolean) => void
+    isPermissionGranted.mockReturnValueOnce(new Promise<boolean>((r) => (answer = r)))
+    return (granted: boolean) => answer(granted)
+  }
+
+  const notified = () =>
+    invoke.mock.calls.filter(([command]) => command === 'plugin:notification|notify').length
+
+  // The last habit is deleted while the re-arm is on its way. The cancel used to go
+  // through at once and the re-arm landed after it, and the plugin stores what it arms:
+  // the reminder came back after every restart, over an app with nothing in it.
+  it('does not schedule the reminder after the last habit took it down', async () => {
+    pretendAndroid()
+    const answer = heldOpen()
+
+    const refreshed = refreshReminder(21, 0)
+    const reconciled = reconcileReminder(0)
+    answer(true)
+
+    const answered = await refreshed
+    await reconciled
+    expect(notified()).toBe(0)
+    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+    expect(answered).toBeNull()
+  })
+
+  // The switch is turned on while the re-arm is on its way, before the permission was
+  // given. The re-arm saw no permission and said off, late, and the screen cancels on
+  // off: the reminder somebody had just turned on was taken down under them.
+  it('does not report off after the switch was turned on', async () => {
+    pretendAndroid()
+    const answer = heldOpen()
+    isPermissionGranted.mockResolvedValue(true)
+
+    const refreshed = refreshReminder(21, 0)
+    const enabled = enableReminder(21, 0)
+    answer(false)
+
+    await expect(refreshed).resolves.toBeNull()
+    await expect(enabled).resolves.toEqual({ outcome: 'on' })
+    expect(notified()).toBe(1)
+  })
+
+  // Nothing newer came in: the re-arm says what it found, as before.
+  it('still reports off when nothing came after it', async () => {
+    pretendAndroid()
+    const answer = heldOpen()
+
+    const refreshed = refreshReminder(21, 0)
+    answer(false)
+
+    await expect(refreshed).resolves.toBe(false)
+  })
+
+  // The calls made with the switch are never skipped, only put in order: turning it on
+  // and straight off leaves it off, whatever the phone answers first.
+  it('keeps the switch calls in the order they were made', async () => {
+    pretendAndroid()
+    const answer = heldOpen()
+
+    const enabled = enableReminder(21, 0)
+    const disabled = disableReminder()
+    answer(true)
+    await enabled
+    await disabled
+
+    const order =
+      invoke.mock.invocationCallOrder[
+        invoke.mock.calls.findIndex(([command]) => command === 'plugin:notification|notify')
+      ]
+    expect(order).toBeLessThan(cancel.mock.invocationCallOrder[0])
   })
 })
 
@@ -323,53 +454,51 @@ describe('the time the offer proposes', () => {
   })
 })
 
-/**
- * What to do when the phone does not answer.
- *
- * Found while simulating the Tauri bridge for something else: a stub that returned null
- * where the plugin returns a list made this throw. The plugin is not expected to do that,
- * which is exactly why the line had no guard and why it is worth one: the cases nobody
- * expects are the ones nobody has written down.
- *
- * Which way to fall is the real question, and it is not "assume nothing is scheduled".
- * This function is only reached when there is nothing left to be reminded about, so taking
- * the reminder down is what it came to do. An unknown answer falls towards doing it.
- */
-describe('when the phone does not say what is scheduled', () => {
-  it('takes the reminder down anyway when the answer is nothing', async () => {
-    pretendAndroid()
-    pending.mockResolvedValue(null)
-
-    await reconcileReminder(0)
-
-    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+describe('whether it will arrive on time', () => {
+  it('says yes where there is no phone to ask', async () => {
+    vi.stubGlobal('isTauri', false)
+    await expect(exactAlarmsAllowed()).resolves.toBe(true)
+    expect(invoke).not.toHaveBeenCalled()
   })
 
-  it('takes it down when the answer is not a list at all', async () => {
+  it('says what the phone says', async () => {
     pretendAndroid()
-    pending.mockResolvedValue(undefined)
-
-    await reconcileReminder(0)
-
-    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+    invoke.mockImplementation((command: string) =>
+      command === 'exact_alarms_allowed' ? Promise.resolve(false) : Promise.resolve(true)
+    )
+    await expect(exactAlarmsAllowed()).resolves.toBe(false)
   })
 
-  it('takes it down when asking throws', async () => {
-    pretendAndroid()
-    pending.mockRejectedValue(new Error('the plugin is not there'))
+  // The only thing this decides is whether the screen offers to fix something. An app
+  // that cannot ask has nothing to offer, and a line about a problem that may not exist
+  // is worse than silence. Same direction as the Rust side, deliberately.
+  it('says yes when the question cannot be put', async () => {
+    vi.stubGlobal('isTauri', true)
+    invoke.mockRejectedValue('no such command')
+    await expect(exactAlarmsAllowed()).resolves.toBe(true)
+  })
+})
 
-    await expect(reconcileReminder(0)).resolves.toBeUndefined()
-    expect(cancel).toHaveBeenCalledWith([REMINDER_ID])
+describe('asking for exact alarms', () => {
+  it('does nothing where there is no phone', async () => {
+    vi.stubGlobal('isTauri', false)
+    await expect(askForExactAlarms()).resolves.toBe(false)
+    expect(invoke).not.toHaveBeenCalled()
   })
 
-  // And a real empty list still means what it says: nothing of ours is scheduled, so there
-  // is nothing to cancel. That is the difference this whole change is about.
-  it('cancels nothing when the phone says the list is empty', async () => {
+  it('says whether the system screen opened', async () => {
     pretendAndroid()
-    pending.mockResolvedValue([])
+    invoke.mockImplementation((command: string) =>
+      command === 'ask_for_exact_alarms' ? Promise.resolve(true) : Promise.resolve(true)
+    )
+    await expect(askForExactAlarms()).resolves.toBe(true)
+  })
 
-    await reconcileReminder(0)
-
-    expect(cancel).not.toHaveBeenCalled()
+  // Nothing is granted by opening a screen, so a refusal to open it is not a refusal of
+  // anything else: it only means there was no screen to open.
+  it('says no when the screen would not open', async () => {
+    vi.stubGlobal('isTauri', true)
+    invoke.mockRejectedValue('no activity')
+    await expect(askForExactAlarms()).resolves.toBe(false)
   })
 })

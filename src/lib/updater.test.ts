@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { checkForUpdate, installFormat, isNewer, takeUpdate, whatWeMayDo } from './updater'
+import {
+  apkUrlFor,
+  checkForUpdate,
+  installFormat,
+  isNewer,
+  takeUpdate,
+  whatWeMayDo,
+} from './updater'
 
 const invoke = vi.hoisted(() => vi.fn())
 const check = vi.hoisted(() => vi.fn())
@@ -51,6 +58,15 @@ describe('what may be offered about this copy', () => {
   // store is already installing is how a person ends up with two Daylos.
   it('says nothing at all to a copy from the Microsoft Store', () => {
     expect(whatWeMayDo('store')).toBe('silent')
+  })
+
+  // The same fact on a third store, and here it is twice true: the Snap Store refreshes
+  // its own copies, and a snap is a read-only squashfs, so there is nowhere to write an
+  // update even if somebody wanted one. Without this it would fall through to 'point',
+  // which is the default for a format nobody recognised, and a copy that keeps itself
+  // current would be sent to the downloads page.
+  it('says nothing at all to a copy from the Snap Store', () => {
+    expect(whatWeMayDo('snap')).toBe('silent')
   })
 })
 
@@ -267,5 +283,44 @@ describe('which version is newer', () => {
   // them. What it must not do is read 1.5.0-beta as newer than 1.5.0.
   it('does not promote a pre-release over the version it precedes', () => {
     expect(isNewer('1.5.0-beta.1', '1.5.0')).toBe(false)
+  })
+})
+
+// The card says "Daylo 1.5.3 is out." and the button is pressed against that sentence, so
+// the file it hands over is that version's file and not whatever is newest at the moment
+// of the press. `releases/latest/download` would have been the same line of code and would
+// have broken that sentence the first day two versions went out close together.
+describe('the one file an Android copy is offered', () => {
+  it('names the file after the version the card just named', () => {
+    expect(apkUrlFor('1.5.3')).toBe(
+      'https://github.com/henfrydls/daylo/releases/download/v1.5.3/Daylo-android-arm64.apk'
+    )
+  })
+
+  // The tag carries a `v` and the manifest does not, and `threeNumbers` accepts either, so
+  // this function may be handed either. Pasting one in front would make `vv1.5.3`, which
+  // is a tag that has never existed and a download that fails with the app saying nothing.
+  it('does not write the v twice when it was handed one', () => {
+    expect(apkUrlFor('v1.5.3')).toBe(
+      'https://github.com/henfrydls/daylo/releases/download/v1.5.3/Daylo-android-arm64.apk'
+    )
+  })
+
+  // Same reason: the comment on `threeNumbers` says surrounding space is what a tag or a
+  // manifest hands over, and a space inside an address is not a space, it is %20.
+  it('keeps the space a manifest brings out of the address', () => {
+    expect(apkUrlFor(' 1.5.3 ')).toBe(
+      'https://github.com/henfrydls/daylo/releases/download/v1.5.3/Daylo-android-arm64.apk'
+    )
+  })
+
+  // Null rather than an address that would 404. The caller has somewhere else to go, and a
+  // page that lists every file is a worse answer than the right file but a better one than
+  // a download that fails.
+  it('refuses to build an address out of something that is not a version', () => {
+    expect(apkUrlFor('1.5')).toBeNull()
+    expect(apkUrlFor('nightly')).toBeNull()
+    expect(apkUrlFor('')).toBeNull()
+    expect(apkUrlFor('1.5.3-rc1')).toBeNull()
   })
 })
