@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lab mutation: the permission moved out of the hand-written manifest the early check
+     reads, into one Gradle still merges into the release build. With EXACT_ALARMS_DECLARED
+     on, the check in "Make the release" must fail before any release exists. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+</manifest>

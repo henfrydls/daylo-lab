@@ -15,7 +15,6 @@
          with EXACT_ALARMS_DECLARED in src/lib/reminders.ts; scripts/check-exact-alarm.js
          fails in the unit tests, in Build Check (Android) and in release.yml while the two
          disagree. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
