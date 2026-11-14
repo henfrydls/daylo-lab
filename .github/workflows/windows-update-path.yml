@@ -141,6 +141,80 @@ jobs:
           if (-not $ok) { exit 1 }
           Write-Host "The installer left the application open, on the new version."
 
+      # One copy after the relaunch, not two: since 1.5.4 a second launch hands over to the
+      # window that is open, and an installer that starts the app while the old one is
+      # still there is exactly the case where two would show.
+      - name: Exactly one copy after the relaunch
+        run: |
+          $n = @(Get-Process Daylo -ErrorAction SilentlyContinue).Count
+          Write-Host "Daylo processes after the relaunch: $n"
+          if ($n -ne 1) { Write-Host "::error::Expected exactly one Daylo process, found $n."; exit 1 }
+
+      # The single instance (#247): open, minimise, open again. The second launch has to go
+      # away and leave the first window restored and in front, which is what the changelog
+      # promises ("even if it was minimised"). Measured on the runner's desktop, which is
+      # real enough for the window calls; whether the runner lets a window take the
+      # foreground is reported apart from whether it was restored.
+      - name: A second launch brings back the minimised window
+        run: |
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public static class W {
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+            [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+            [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+          }
+          "@
+          Get-Process Daylo -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 3
+          $first = Start-Process -FilePath $env:APP -PassThru
+          Start-Sleep -Seconds 25
+          $first.Refresh()
+          $hwnd = $first.MainWindowHandle
+          if ($hwnd -eq [IntPtr]::Zero) { Write-Host "::error::The first copy has no main window."; exit 1 }
+          Write-Host "first copy pid $($first.Id), main window $hwnd"
+
+          [W]::ShowWindow($hwnd, 6) | Out-Null   # SW_MINIMIZE
+          Start-Sleep -Seconds 2
+          if (-not [W]::IsIconic($hwnd)) { Write-Host "::error::The window did not minimise, so the rest proves nothing."; exit 1 }
+          Write-Host "minimised: yes"
+
+          $second = Start-Process -FilePath $env:APP -PassThru
+          if (-not $second.WaitForExit(15000)) {
+            Write-Host "::error::The second launch was still running 15 s later."
+            exit 1
+          }
+          Write-Host "second launch pid $($second.Id) exited with $($second.ExitCode) after $([int]((Get-Date) - $second.StartTime).TotalSeconds)s"
+          Start-Sleep -Seconds 3
+
+          $ok = $true
+          $n = @(Get-Process Daylo -ErrorAction SilentlyContinue).Count
+          if ($n -eq 1) { Write-Host "Daylo processes: 1" } else { Write-Host "::error::Daylo processes: $n"; $ok = $false }
+          if (Get-Process -Id $first.Id -ErrorAction SilentlyContinue) { Write-Host "the first copy is still the one running" } else { Write-Host "::error::The first copy is gone."; $ok = $false }
+          if ([W]::IsIconic($hwnd)) { Write-Host "::error::The window is still minimised."; $ok = $false } else { Write-Host "restored: yes" }
+          $fg = [W]::GetForegroundWindow()
+          if ($fg -eq $hwnd) { Write-Host "in front: yes" } else { Write-Host "::error::In front: no (foreground window $fg, Daylo's $hwnd)."; $ok = $false }
+
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          New-Item -ItemType Directory -Force shots | Out-Null
+          $bmp.Save("shots/after-second-launch.png", [System.Drawing.Imaging.ImageFormat]::Png)
+
+          if (-not $ok) { exit 1 }
+          Write-Host "The second launch brought back the minimised window and went away."
+
+      - name: Keep the screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-second-launch
+          path: shots/
+          if-no-files-found: warn
+
       - name: Close it
         if: always()
         run: Get-Process Daylo -ErrorAction SilentlyContinue | Stop-Process -Force
