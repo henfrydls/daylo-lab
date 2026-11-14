@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `f02569f`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `8e1308f`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -74,17 +74,23 @@ already did.
 
 # The round
 
-Nothing to install this time. This round is for two things only a tag runs.
+This lab version is called 1.5.4, but it is not Daylo's 1.5.4. The lab only has to go
+upwards, so that a lab copy always updates to the next one; it does not have to match
+the real version numbers. This round is 1.5.3 plus pull request #247, which is not
+merged yet. When the real 1.5.4 comes, the lab uses 1.5.5, or its old releases are
+deleted first.
 
-1. The exact-alarm check that now runs inside "Make the release", before the release
-   exists, and the later one that reads the manifests Gradle merged for the signed APK
-   and AAB.
-2. The patched notification plugin, in a signed release build: the reminder is stored
-   so that a restart or an update of the app can put it back.
+What to check, by growth:
 
-Growth tags **v1.5.3**, which must come out green, and a second tag carrying a manifest
-that disagrees with the switch, which must stop in "Make the release" without publishing
-anything. Henfry has nothing to do in this round.
+1. Open Daylo twice: the AppImage on Linux, and the installer on the Windows VM, also
+   with the window minimised. The second launch must bring the first window to the
+   front and leave no second process.
+2. With the real Daylo open on the same desktop, open the lab AppImage: it must open a
+   window of its own, and the real Daylo's window must not move.
+3. Update a lab copy from **v1.5.3** to **v1.5.4**, and check that Daylo comes back
+   after the restart.
+
+Henfry has nothing to do in this round.
 
 # Publishing a lab release
 

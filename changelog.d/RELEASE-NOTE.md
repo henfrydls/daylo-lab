@@ -1,1 +1,1 @@
-Daylo Lab 1.5.3: the daily reminder now survives a restart of the phone and an update of the app.
+Daylo Lab 1.5.4: opening Daylo again brings back the window that is already open.
