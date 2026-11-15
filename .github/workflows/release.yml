@@ -432,7 +432,6 @@ jobs:
         run: npx tauri android build --aab --target aarch64
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
-          ORG_GRADLE_PROJECT_dayloPlay: 'true'
 
       # The bundle manifest Gradle merged for the AAB, right after its own pass: no
       # exact-alarm permission from anybody, and the Play mark. What happens when it is red
@@ -442,6 +441,7 @@ jobs:
       # line from this job's AAB step. The overlay is then never merged, and this step names
       # the bundle manifest as declaring the permission and carrying no mark.
       - name: The AAB's merged manifest does not ask for exact alarms and carries the mark
+        if: false  # mutation: the intermediate check is off, so the final one has to catch it
         run: |
           set -uo pipefail
           shopt -s nullglob globstar
