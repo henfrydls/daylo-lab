@@ -311,7 +311,9 @@ jobs:
             find "$dir" -name AndroidManifest.xml 2>/dev/null || true
             exit 1
           fi
-          node scripts/check-exact-alarm.js --expect declared --channel none "${packaged[@]}"
+          APP_ID=$(node -p "require('./src-tauri/tauri.conf.json').identifier")
+          node scripts/check-exact-alarm.js --expect declared --channel none --package "$APP_ID" \
+            "${packaged[@]}"
 
       - name: Sign APK
         env:
@@ -453,7 +455,9 @@ jobs:
             find "$dir" -name AndroidManifest.xml 2>/dev/null || true
             exit 1
           fi
-          node scripts/check-exact-alarm.js --expect absent --channel play "${bundle[@]}"
+          PLAY_ID=$(sed -n 's/^dayloPlayApplicationId=//p' src-tauri/gen/android/gradle.properties)
+          node scripts/check-exact-alarm.js --expect absent --channel play --package "$PLAY_ID" \
+            "${bundle[@]}"
 
       # The same key as the APK, which is the point of doing it here rather than letting
       # Play sign a fresh upload: it will be both the upload key and, because Henfry will
@@ -545,15 +549,21 @@ jobs:
       # - The AAB does not ask for it and carries the mark: bundletool dumps its manifest as
       #   XML, which the same script as above reads. bundletool is a pinned release whose
       #   SHA-256 is checked before it runs; the hash is the one GitHub lists for that asset.
+      # - Each carries its own application id: the APK com.daylo.app, from tauri.conf.json,
+      #   which every installed copy updates over; the AAB the one in gradle.properties,
+      #   because Play already has a com.daylo.app from somebody else. And the two differ.
       # - Both have the same versionCode and versionName. Play and the APK are the same
       #   version of Daylo, and a check-in or a support question that names one has to name
       #   the other.
       #
-      # Every check speaks before the step fails, so one red run names every reason.
+      # Every check speaks before the step fails, so one red run names every reason. And
+      # what was read is printed on green runs too: the APK's permissions, and the AAB's
+      # uses-permission lines and channel mark, so the log of every release says what each
+      # file asked for, not only that a check was happy with it.
       #
       # To see it red on a lab tag: delete the dayloPlay line from the AAB step above. The
       # AAB's merged-manifest check goes red first; with that step skipped, this one names
-      # the AAB as declaring the permission and carrying no mark.
+      # the AAB as declaring the permission, carrying no mark and being com.daylo.app.
       - name: The APK and the AAB are the two builds they should be
         env:
           BUNDLETOOL_VERSION: '1.18.3'
@@ -563,7 +573,14 @@ jobs:
           APK=src-tauri/gen/android/app/build/outputs/apk/universal/release/Daylo-android-arm64.apk
           AAB=Daylo-android.aab
           BT="${ANDROID_HOME}/build-tools/$(ls ${ANDROID_HOME}/build-tools/ | tail -1)"
+          APP_ID=$(node -p "require('./src-tauri/tauri.conf.json').identifier")
+          PLAY_ID=$(sed -n 's/^dayloPlayApplicationId=//p' src-tauri/gen/android/gradle.properties)
           status=0
+          if [ -z "$APP_ID" ] || [ -z "$PLAY_ID" ] || [ "$APP_ID" = "$PLAY_ID" ]; then
+            echo "::error::The two application ids are not two: APK '$APP_ID' (tauri.conf.json),"
+            echo "::error::AAB '$PLAY_ID' (dayloPlayApplicationId in gradle.properties)."
+            status=1
+          fi
           for f in "$APK" "$AAB"; do
             if [ ! -s "$f" ]; then
               echo "::error::$f is not there, so it cannot be checked."
@@ -584,10 +601,19 @@ jobs:
           apk_permissions=$("$BT/aapt2" dump permissions "$APK") || { echo "::error::aapt2 could not read the APK's permissions."; exit 1; }
           apk_tree=$("$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK") || { echo "::error::aapt2 could not read the APK's manifest."; exit 1; }
           apk_badging=$("$BT/aapt2" dump badging "$APK") || { echo "::error::aapt2 could not read the APK's version."; exit 1; }
+          echo "--- the APK's permissions (aapt2 dump permissions) ---"
+          echo "$apk_permissions"
           if [[ "$apk_permissions" != *"'android.permission.SCHEDULE_EXACT_ALARM'"* ]]; then
             echo "::error::The APK does not ask for SCHEDULE_EXACT_ALARM. An update to it would"
-            echo "::error::take the exact alarm away from everybody who allowed it. It asks for:"
-            echo "$apk_permissions"
+            echo "::error::take the exact alarm away from everybody who allowed it. What it asks"
+            echo "::error::for is printed above."
+            status=1
+          fi
+          apk_package=$(sed -nE "1s/^package: name='([^']*)'.*/\1/p" <<< "$apk_badging")
+          echo "APK: package=$apk_package"
+          if [ "$apk_package" != "$APP_ID" ]; then
+            echo "::error::The APK is the package '$apk_package' and $APP_ID was expected. Under"
+            echo "::error::another name, an update installs as a second app beside the first."
             status=1
           fi
           if [[ "$apk_tree" == *'"daylo.channel"'* ]]; then
@@ -601,7 +627,10 @@ jobs:
             echo "::error::bundletool could not read the AAB's manifest."
             exit 1
           fi
-          node scripts/check-exact-alarm.js --expect absent --channel play "$aab_manifest" || status=1
+          echo "--- the AAB's permissions and channel mark (bundletool dump manifest) ---"
+          grep -E '<manifest|uses-permission|daylo\.channel' "$aab_manifest" || echo "(no manifest line, no uses-permission line and no channel mark)"
+          node scripts/check-exact-alarm.js --expect absent --channel play --package "$PLAY_ID" \
+            "$aab_manifest" || status=1
 
           apk_code=$(sed -nE "1s/.* versionCode='([^']*)'.*/\1/p" <<< "$apk_badging")
           apk_name=$(sed -nE "1s/.* versionName='([^']*)'.*/\1/p" <<< "$apk_badging")

@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `d32ec07`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `8fa2639`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -74,18 +74,20 @@ already did.
 
 # The round
 
-This lab version is called 1.5.5, but it is not Daylo's 1.5.5. The lab only has to go
-upwards, so that a lab copy always updates to the next one. This round is Daylo's 1.5.4
-branch: the Google Play bundle is built without the exact-alarm permission and marks itself
-as the Play build, while the APK keeps the permission.
+This lab version is called 1.5.6, but it is not Daylo's 1.5.6. The lab only has to go
+upwards. This round is Daylo's 1.5.5 branch (#259): the Google Play bundle gets an
+application id of its own, because com.daylo.app is taken on Play. In the lab, that id is
+com.dlslabs.daylo.lab and the APK stays com.daylo.lab.
 
 What to check, by the product session and growth:
 
-1. The release run is green, including the new check on the final files: the APK asks for
-   exact alarms and has no Play mark, the bundle asks for none and has the mark, and both
-   carry the same version.
-2. A second lab tag, a mutation that builds the bundle without the Play overlay, has to
-   fail at that check.
+1. The release run is green, including the final check: the APK carries the identifier in
+   tauri.conf.json, the bundle carries dayloPlayApplicationId from gradle.properties, and
+   the two differ.
+2. Two mutation tags, each of which has to fail at that check:
+   - the bundle built without the id line in build.gradle.kts, so it comes out with the
+     APK's id;
+   - the Play id set for every build, so the APK comes out with the Play id.
 
 Henfry has nothing to do in this round.
 
