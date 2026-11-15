@@ -11,7 +11,7 @@ cannot publish a version nobody has held.
 
 ## Where it came from
 
-Built from `henfrydls/daylo` at commit `8e1308f`. Nothing here is written by hand except
+Built from `henfrydls/daylo` at commit `d32ec07`. Nothing here is written by hand except
 the differences below, and this tree is not edited in place: every round it is thrown away
 and built again from that commit, with those differences applied on top.
 
@@ -74,21 +74,18 @@ already did.
 
 # The round
 
-This lab version is called 1.5.4, but it is not Daylo's 1.5.4. The lab only has to go
-upwards, so that a lab copy always updates to the next one; it does not have to match
-the real version numbers. This round is 1.5.3 plus pull request #247, which is not
-merged yet. When the real 1.5.4 comes, the lab uses 1.5.5, or its old releases are
-deleted first.
+This lab version is called 1.5.5, but it is not Daylo's 1.5.5. The lab only has to go
+upwards, so that a lab copy always updates to the next one. This round is Daylo's 1.5.4
+branch: the Google Play bundle is built without the exact-alarm permission and marks itself
+as the Play build, while the APK keeps the permission.
 
-What to check, by growth:
+What to check, by the product session and growth:
 
-1. Open Daylo twice: the AppImage on Linux, and the installer on the Windows VM, also
-   with the window minimised. The second launch must bring the first window to the
-   front and leave no second process.
-2. With the real Daylo open on the same desktop, open the lab AppImage: it must open a
-   window of its own, and the real Daylo's window must not move.
-3. Update a lab copy from **v1.5.3** to **v1.5.4**, and check that Daylo comes back
-   after the restart.
+1. The release run is green, including the new check on the final files: the APK asks for
+   exact alarms and has no Play mark, the bundle asks for none and has the mark, and both
+   carry the same version.
+2. A second lab tag, a mutation that builds the bundle without the Play overlay, has to
+   fail at that check.
 
 Henfry has nothing to do in this round.
 

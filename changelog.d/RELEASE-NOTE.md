@@ -1,1 +1,1 @@
-Daylo Lab 1.5.4: opening Daylo again brings back the window that is already open.
+Daylo Lab 1.5.5: the Google Play build reminds you around the time you chose, and the APK keeps on-time reminders.
